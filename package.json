@@ -1,0 +1,16 @@
+{
+  "name": "replay",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Flight recorder for AI agents - SDK + collector + dashboard",
+  "scripts": {
+    "dev:collector": "pnpm --filter replay-collector dev",
+    "dev:dashboard": "pnpm --filter replay-dashboard dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.13.0"
+}
