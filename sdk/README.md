@@ -6,4 +6,6 @@ tool call, retry, and cost recorded.
 Zero runtime dependencies. Never throws into the host agent: if the collector is
 unreachable, your agent runs exactly as it would without this library.
 
-Status: scaffold only, not yet implemented.
+Status: implemented and wired to the collector - `startRun`, `logEvent`,
+`end`, the bounded in-memory buffer, payload truncation, batched sends with
+one retry, flush on an interval and on `end()`.
