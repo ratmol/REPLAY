@@ -9,4 +9,5 @@ Not published to npm. Consumed through the pnpm workspace.
 keeps zero runtime dependencies. The collector and dashboard may import the Zod
 values.
 
-Spec: [`../docs/EVENT_SCHEMA.md`](../docs/EVENT_SCHEMA.md). Status: scaffold only.
+Spec: [`../docs/EVENT_SCHEMA.md`](../docs/EVENT_SCHEMA.md). Status: event
+schemas and the run/batch request schemas are implemented and tested.
