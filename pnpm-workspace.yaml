@@ -3,3 +3,6 @@ packages:
   - "sdk"
   - "collector"
   - "dashboard"
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
