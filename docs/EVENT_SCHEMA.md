@@ -169,10 +169,12 @@ so the SDK can log it in debug mode.
 
 ## 7. Open questions (decide before implementing, do not silently guess)
 
-1. Does `run_start` duplicate the `POST /runs` call, or does `POST /runs` emit
-   it implicitly? Leaning: `POST /runs` creates the row, and the SDK also emits
-   a `run_start` event at `seq: 0`, so the event log alone is a complete record.
-   Redundant by design - event sourcing wants the log to be self-sufficient.
-2. Should `seq` gaps be detectable? A gap means events were dropped by the SDK's
-   silent-failure path. Surfacing that in the dashboard ("3 events lost") is
-   honest and cheap. Leaning yes, but it depends on the dashboard existing first.
+1. **Decided (0.2):** `POST /runs` creates the row, and the SDK also emits a
+   `run_start` event at `seq: 0`. Redundant by design - event sourcing wants the
+   event log alone to be a complete record, not dependent on the `runs` row.
+   Does not change the shape of the `run_start` schema, only how the collector
+   calls it in 1.1 - noted here so that task doesn't re-litigate it.
+2. **Deferred, not decided:** whether `seq` gaps should be surfaced in the
+   dashboard. Explicitly depends on the dashboard existing (Phase 2). Nothing in
+   the 0.2 schema work forecloses this - a gap is just a hole in the `seq`
+   sequence, detectable later from stored events without any schema change.
