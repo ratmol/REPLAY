@@ -107,3 +107,34 @@ export function appendEvents(
 ): { accepted: number; skipped: number } {
   return appendEventsTxn(runId, events);
 }
+
+export interface EventRow {
+  id: number;
+  run_id: string;
+  seq: number;
+  timestamp: string;
+  type: string;
+  duration_ms: number | null;
+  payload: string;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  cost_usd: number | null;
+}
+
+// idx_runs_started_at (migrations.ts) makes this ORDER BY + LIMIT/OFFSET an
+// index scan rather than a full table sort.
+const listRunsStmt = db.prepare("SELECT * FROM runs ORDER BY started_at DESC LIMIT ? OFFSET ?");
+
+export function listRuns(limit: number, offset: number): RunRow[] {
+  return listRunsStmt.all(limit, offset) as RunRow[];
+}
+
+// idx_events_run_seq covers (run_id, seq), so "seq > ? ORDER BY seq" is also
+// an index scan, not a sort.
+const listEventsStmt = db.prepare(
+  "SELECT * FROM events WHERE run_id = ? AND seq > ? ORDER BY seq ASC LIMIT ?",
+);
+
+export function listEvents(runId: string, after: number, limit: number): EventRow[] {
+  return listEventsStmt.all(runId, after, limit) as EventRow[];
+}
