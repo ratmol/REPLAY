@@ -236,3 +236,19 @@ export const EventBatchSchema = z
   .strict();
 
 export type EventBatch = z.infer<typeof EventBatchSchema>;
+
+/**
+ * Body for `PATCH /runs/:id` (docs/EVENT_SCHEMA.md section 6). The SDK sends
+ * this from `end()` alongside the `run_end` event: the event log is the
+ * authoritative record of how a run finished, but `runs.status` is a
+ * denormalized convenience column so the dashboard's runs list doesn't have
+ * to scan events to know if a run is done.
+ */
+export const PatchRunRequestSchema = z
+  .object({
+    status: z.enum(["completed", "failed"]),
+    endedAt: z.string().datetime(),
+  })
+  .strict();
+
+export type PatchRunRequest = z.infer<typeof PatchRunRequestSchema>;

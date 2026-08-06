@@ -1,20 +1,21 @@
 // replay-collector entry point.
 //
-// POST /runs, POST /runs/:id/events, GET /runs, GET /runs/:id,
-// GET /runs/:id/events. Zod validation at the edge, the documented error
-// contract (docs/EVENT_SCHEMA.md section 6). Storage is SQLite via
-// store.ts/db.ts (roadmap 1.2).
+// POST /runs, POST /runs/:id/events, PATCH /runs/:id, GET /runs,
+// GET /runs/:id, GET /runs/:id/events. Zod validation at the edge, the
+// documented error contract (docs/EVENT_SCHEMA.md section 6). Storage is
+// SQLite via store.ts/db.ts (roadmap 1.2).
 
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { z } from "zod";
-import { CreateRunRequestSchema, EventBatchSchema } from "replay-shared";
+import { CreateRunRequestSchema, EventBatchSchema, PatchRunRequestSchema } from "replay-shared";
 import {
   appendEvents,
   createRun,
   getRun,
   listEvents,
   listRuns,
+  updateRunStatus,
   type EventRow,
   type RunRow,
 } from "./store.js";
@@ -109,6 +110,26 @@ app.post("/runs/:id/events", async (c) => {
 
   const result = appendEvents(runId, parsed.data.events);
   return c.json(result, 200);
+});
+
+app.patch("/runs/:id", async (c) => {
+  const runId = c.req.param("id");
+  const body = await readJsonBody(c.req.raw);
+  if (body === undefined) {
+    return c.json({ error: "invalid JSON body" }, 400);
+  }
+
+  if (!getRun(runId)) {
+    return c.json({ error: `unknown run: ${runId}` }, 404);
+  }
+
+  const parsed = PatchRunRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "invalid patch", issues: parsed.error.issues }, 400);
+  }
+
+  updateRunStatus(runId, parsed.data);
+  return c.json({ ok: true }, 200);
 });
 
 app.get("/runs", (c) => {

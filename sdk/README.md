@@ -8,4 +8,5 @@ unreachable, your agent runs exactly as it would without this library.
 
 Status: implemented and wired to the collector - `startRun`, `logEvent`,
 `end`, the bounded in-memory buffer, payload truncation, batched sends with
-one retry, flush on an interval and on `end()`.
+one retry, flush on an interval and on `end()`. `end()` also PATCHes the
+run's status so it doesn't stay stuck at "running".

@@ -9,7 +9,7 @@
 // batch directly, which would double-count on a retry (architecture
 // invariant 3 in CLAUDE.md).
 
-import type { CreateRunRequest, Event } from "replay-shared";
+import type { CreateRunRequest, Event, PatchRunRequest } from "replay-shared";
 import { db } from "./db.js";
 
 export interface RunRow {
@@ -49,6 +49,19 @@ const getRunStmt = db.prepare("SELECT * FROM runs WHERE id = ?");
 
 export function getRun(runId: string): RunRow | undefined {
   return getRunStmt.get(runId) as RunRow | undefined;
+}
+
+const updateRunStatusStmt = db.prepare(
+  "UPDATE runs SET status = @status, ended_at = @endedAt WHERE id = @id",
+);
+
+// Not a violation of "events are append-only, no UPDATE": that invariant is
+// scoped to the events table specifically. runs.status/ended_at are
+// documented state (docs/EVENT_SCHEMA.md section 5: "ended_at NULL while
+// running") that's expected to transition exactly once, same category as the
+// derived-totals UPDATE in appendEventsTxn below.
+export function updateRunStatus(runId: string, patch: PatchRunRequest): void {
+  updateRunStatusStmt.run({ id: runId, status: patch.status, endedAt: patch.endedAt });
 }
 
 const insertEventStmt = db.prepare(`

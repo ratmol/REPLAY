@@ -59,6 +59,34 @@ test("end() sends run_start, logged events, and run_end in one batch", async (t)
   assert.deepEqual(run.getBufferedEvents(), []);
 });
 
+test("end() PATCHes runs.status to keep it in sync with the run_end event", async (t) => {
+  const calls = mockFetch(t, () => ({ ok: true }));
+  const replay = new Replay({ endpoint: ENDPOINT, flushIntervalMs: 50_000 });
+  const run = replay.startRun({ name: "job-scraper" });
+  await run.end({ status: "failed", summary: { reason: "budget exceeded" } });
+
+  const patchCall = calls.find((c) => c.url === `${ENDPOINT}/runs/${run.id}`);
+  assert.ok(patchCall, "expected a PATCH to /runs/:id");
+  const patchBody = patchCall!.body as { status: string; endedAt: string };
+  assert.equal(patchBody.status, "failed");
+  assert.equal(typeof patchBody.endedAt, "string");
+});
+
+test("a PATCH failure is reported via onError, not thrown", async (t) => {
+  mockFetch(t, (url) => (/\/runs\/[^/]+$/.test(url) ? "reject" : { ok: true }));
+  const errors: unknown[] = [];
+  const replay = new Replay({
+    endpoint: ENDPOINT,
+    flushIntervalMs: 50_000,
+    onError: (e) => errors.push(e),
+  });
+  const run = replay.startRun({ name: "job-scraper" });
+
+  await assert.doesNotReject(() => run.end({ status: "completed" }));
+  assert.equal(errors.length, 1);
+  assert.match(String((errors[0] as Error).message), /status/);
+});
+
 test("collector-down path: end() never throws, calls onError, keeps events buffered", async (t) => {
   mockFetch(t, () => "reject");
   const errors: unknown[] = [];
@@ -80,7 +108,7 @@ test("collector-down path: end() never throws, calls onError, keeps events buffe
 test("a batch that fails once then succeeds on retry is not reported as an error", async (t) => {
   let eventsAttempts = 0;
   mockFetch(t, (url) => {
-    if (url.endsWith("/runs")) return { ok: true };
+    if (!url.endsWith("/events")) return { ok: true }; // POST /runs, PATCH /runs/:id
     eventsAttempts += 1;
     return eventsAttempts === 1 ? "reject" : { ok: true };
   });
@@ -99,7 +127,7 @@ test("a batch that fails once then succeeds on retry is not reported as an error
 });
 
 test("a batch that fails both attempts calls onError and does not requeue", async (t) => {
-  mockFetch(t, (url) => (url.endsWith("/runs") ? { ok: true } : "reject"));
+  mockFetch(t, (url) => (url.endsWith("/events") ? "reject" : { ok: true }));
   const errors: unknown[] = [];
   const replay = new Replay({
     endpoint: ENDPOINT,

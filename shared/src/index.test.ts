@@ -7,6 +7,7 @@ import {
   isTruncatedPayload,
   CreateRunRequestSchema,
   EventBatchSchema,
+  PatchRunRequestSchema,
 } from "./index.js";
 
 const baseRunStart = {
@@ -133,4 +134,20 @@ test("surfaces per-event issues when one event in a batch is invalid", () => {
   if (!result.success) {
     assert.ok(result.error.issues.some((issue) => issue.path.includes("seq")));
   }
+});
+
+test("parses a valid patch-run request", () => {
+  const result = PatchRunRequestSchema.safeParse({
+    status: "completed",
+    endedAt: "2026-07-31T12:00:10Z",
+  });
+  assert.equal(result.success, true);
+});
+
+test("rejects a patch-run status outside completed/failed", () => {
+  const result = PatchRunRequestSchema.safeParse({
+    status: "running",
+    endedAt: "2026-07-31T12:00:10Z",
+  });
+  assert.equal(result.success, false);
 });

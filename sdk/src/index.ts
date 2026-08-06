@@ -12,7 +12,7 @@
 import type { EventType } from "replay-shared";
 import { RingBuffer } from "./ring-buffer.js";
 import { truncatePayload } from "./payload.js";
-import { chunkArray, postJsonWithRetry } from "./transport.js";
+import { chunkArray, patchJsonWithRetry, postJsonWithRetry } from "./transport.js";
 
 export const REPLAY_SDK_VERSION = "0.2.0";
 
@@ -120,6 +120,15 @@ export class Run {
   private seq = 0;
   private ended = false;
   private runCreated = false;
+  // Set as soon as an attempt is made, success or failure - same "one try
+  // (with its own internal retry), then give up silently" policy as event
+  // batches. Without this, the constructor's own initial flush can still be
+  // in-flight when end() runs and reach this check after `ended` is already
+  // true, racing the queued follow-up round (see flush()'s comment) into
+  // attempting the PATCH twice whenever it's failing.
+  private statusPatchAttempted = false;
+  private endResult: EndRunOptions | undefined;
+  private endedAt: string | undefined;
 
   // Single-flight flush with a "run again after this one" flag, rather than
   // a plain boolean guard: end() must be able to trust that its own final
@@ -178,6 +187,8 @@ export class Run {
       return;
     }
     this.ended = true;
+    this.endResult = options;
+    this.endedAt = new Date().toISOString();
     clearInterval(this.flushTimer);
     try {
       this.push("run_end", { status: options.status, summary: options.summary });
@@ -255,11 +266,11 @@ export class Run {
       this.runCreated = true;
     }
 
+    // No early return on an empty buffer: the PATCH below must still run even
+    // on a round with nothing new to send (e.g. a follow-up round after the
+    // one that already sent run_end - see the flush() comment for when that
+    // happens).
     const events = this.buffer.drain();
-    if (events.length === 0) {
-      return;
-    }
-
     for (const batch of chunkArray(events, MAX_EVENTS_PER_BATCH)) {
       const sent = await postJsonWithRetry(`${this.config.endpoint}/runs/${this.id}/events`, {
         events: batch,
@@ -270,6 +281,25 @@ export class Run {
             `replay-sdk: failed to send ${batch.length} event(s) for run "${this.id}" to ` +
               `${this.config.endpoint} after 1 retry. These events were dropped, not requeued - ` +
               `check that the collector is running and reachable.`,
+          ),
+        );
+      }
+    }
+
+    // The run_end event above is the authoritative record of how the run
+    // finished; this PATCH just keeps runs.status in sync so the dashboard's
+    // runs list doesn't need to scan events to know a run is done.
+    if (this.ended && !this.statusPatchAttempted && this.endResult && this.endedAt) {
+      this.statusPatchAttempted = true;
+      const patched = await patchJsonWithRetry(`${this.config.endpoint}/runs/${this.id}`, {
+        status: this.endResult.status,
+        endedAt: this.endedAt,
+      });
+      if (!patched) {
+        this.config.onError?.(
+          new Error(
+            `replay-sdk: failed to update run "${this.id}" status to "${this.endResult.status}" ` +
+              `after 1 retry. The run_end event was recorded, but runs.status may still show "running".`,
           ),
         );
       }
