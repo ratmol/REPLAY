@@ -8,4 +8,6 @@ Status: full API surface implemented - `POST /runs`, `POST /runs/:id/events`,
 `PATCH /runs/:id`, `GET /runs`, `GET /runs/:id`, `GET /runs/:id/events` - with
 Zod validation, the documented error contract, and SQLite persistence
 (plain-SQL migrations run at startup, unique index on `(run_id, seq)` for
-idempotent batch retries).
+idempotent batch retries). CORS is enabled for the dashboard's origin
+(`DASHBOARD_ORIGIN` env var, defaults to `http://localhost:5173`) - the SDK
+talks to this API from Node, where CORS doesn't apply.

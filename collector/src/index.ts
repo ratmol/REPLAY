@@ -6,9 +6,15 @@
 // SQLite via store.ts/db.ts (roadmap 1.2).
 
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
 import { z } from "zod";
-import { CreateRunRequestSchema, EventBatchSchema, PatchRunRequestSchema } from "replay-shared";
+import {
+  CreateRunRequestSchema,
+  EventBatchSchema,
+  PatchRunRequestSchema,
+  type RunSummary,
+} from "replay-shared";
 import {
   appendEvents,
   createRun,
@@ -21,6 +27,11 @@ import {
 } from "./store.js";
 
 const MAX_BATCH_SIZE = 500;
+
+// The SDK talks to this API from Node, where CORS doesn't apply - it's a
+// browser-only enforcement. This is entirely for the dashboard, a different
+// origin (:5173 dev, some deployed origin later in 4.2) fetching from here.
+const DASHBOARD_ORIGIN = process.env.DASHBOARD_ORIGIN ?? "http://localhost:5173";
 
 // Query-string validation for the GET endpoints below. These aren't part of
 // the SDK<->collector wire contract (the SDK never constructs them), so they
@@ -37,7 +48,7 @@ const EventsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(1000).default(500),
 });
 
-function serializeRun(row: RunRow): Record<string, unknown> {
+function serializeRun(row: RunRow): RunSummary {
   return {
     id: row.id,
     name: row.name,
@@ -45,7 +56,10 @@ function serializeRun(row: RunRow): Record<string, unknown> {
     model: row.model ?? undefined,
     startedAt: row.started_at,
     endedAt: row.ended_at ?? undefined,
-    status: row.status,
+    // SQLite has no enum type, but this column is only ever written by
+    // createRun ('running') and updateRunStatus (Zod-validated to
+    // "completed" | "failed"), so the cast is safe.
+    status: row.status as RunSummary["status"],
     totalTokensIn: row.total_tokens_in,
     totalTokensOut: row.total_tokens_out,
     totalCostUsd: row.total_cost_usd,
@@ -67,6 +81,8 @@ function serializeEvent(row: EventRow): Record<string, unknown> {
 }
 
 const app = new Hono();
+
+app.use("/*", cors({ origin: DASHBOARD_ORIGIN }));
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 

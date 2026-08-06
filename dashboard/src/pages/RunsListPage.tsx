@@ -1,13 +1,57 @@
-import { Link } from "../router";
+import { useEffect, useState } from "react";
+import type { RunSummary } from "replay-shared";
+import { fetchRuns } from "../api";
+import RunRow from "../components/RunRow";
 
-// Scaffold only - fetching real runs from GET /runs is roadmap 2.2.
+// Minimal functional loading/error/empty handling only - a fetching page
+// can't work without *some* behavior for these. The actual VHS-styled
+// treatment for them is roadmap 2.7's polish pass, not this task.
+type LoadState =
+  | { kind: "loading" }
+  | { kind: "error"; message: string }
+  | { kind: "loaded"; runs: RunSummary[] };
+
 export default function RunsListPage() {
+  const [state, setState] = useState<LoadState>({ kind: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchRuns()
+      .then((runs) => {
+        if (!cancelled) {
+          setState({ kind: "loaded", runs });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : "Failed to load runs";
+          setState({ kind: "error", message });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (state.kind === "loading") {
+    return <p className="text-sm text-ink-muted">Loading runs...</p>;
+  }
+
+  if (state.kind === "error") {
+    return <p className="text-sm text-status-failed">{state.message}</p>;
+  }
+
+  if (state.runs.length === 0) {
+    return <p className="text-sm text-ink-muted">No runs recorded yet.</p>;
+  }
+
   return (
-    <div>
-      <p className="text-sm text-ink-muted">Runs list - wired up to the collector in 2.2.</p>
-      <Link to="/runs/demo" className="mt-4 inline-block text-sm text-phosphor hover:underline">
-        View a run &rarr;
-      </Link>
-    </div>
+    <ul className="divide-y divide-border">
+      {state.runs.map((run) => (
+        <li key={run.id}>
+          <RunRow run={run} />
+        </li>
+      ))}
+    </ul>
   );
 }

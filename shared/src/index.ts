@@ -252,3 +252,26 @@ export const PatchRunRequestSchema = z
   .strict();
 
 export type PatchRunRequest = z.infer<typeof PatchRunRequestSchema>;
+
+/**
+ * Shape of one run in `GET /runs` and `GET /runs/:id` (docs/EVENT_SCHEMA.md
+ * section 6). A plain interface, not a Zod schema: this is a response the
+ * collector constructs itself from typed SQLite rows, always correct by
+ * construction, not untrusted input that needs edge validation (invariant 4
+ * is about incoming data). Its only job is keeping the collector's response
+ * shape and the dashboard's expectation of it from silently drifting apart -
+ * annotate the collector's serializer with this type too.
+ */
+export interface RunSummary {
+  id: string;
+  name: string;
+  agentName?: string;
+  model?: string;
+  startedAt: string;
+  endedAt?: string;
+  status: "running" | "completed" | "failed";
+  totalTokensIn: number;
+  totalTokensOut: number;
+  totalCostUsd: number;
+  metadata?: Record<string, unknown>;
+}
