@@ -2,4 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* TODO: CRT/VHS design tokens. */
+@layer base {
+  body {
+    @apply bg-surface text-ink font-sans antialiased;
+  }
+}
