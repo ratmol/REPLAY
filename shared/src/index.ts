@@ -275,3 +275,22 @@ export interface RunSummary {
   totalCostUsd: number;
   metadata?: Record<string, unknown>;
 }
+
+/**
+ * Shape of one event in `GET /runs/:id/events` - same reasoning as
+ * RunSummary (plain interface, collector-constructed response, nothing to
+ * validate at this edge). Deliberately not the `Event` discriminated union:
+ * that ties `type` to a specific payload shape at the type level, which
+ * fights a generic deserialized-from-JSON consumer for no benefit here
+ * either - same call the SDK made for `BufferedEvent`.
+ */
+export interface EventRecord {
+  seq: number;
+  type: EventType;
+  timestamp: string;
+  durationMs?: number;
+  payload: Record<string, unknown>;
+  tokensIn?: number;
+  tokensOut?: number;
+  costUsd?: number;
+}

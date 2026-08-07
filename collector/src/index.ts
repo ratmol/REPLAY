@@ -13,6 +13,7 @@ import {
   CreateRunRequestSchema,
   EventBatchSchema,
   PatchRunRequestSchema,
+  type EventRecord,
   type RunSummary,
 } from "replay-shared";
 import {
@@ -67,10 +68,13 @@ function serializeRun(row: RunRow): RunSummary {
   };
 }
 
-function serializeEvent(row: EventRow): Record<string, unknown> {
+function serializeEvent(row: EventRow): EventRecord {
   return {
     seq: row.seq,
-    type: row.type,
+    // Same reasoning as serializeRun's status cast: this column only ever
+    // holds one of the nine values EventBatchSchema already validated on
+    // the way in.
+    type: row.type as EventRecord["type"],
     timestamp: row.timestamp,
     durationMs: row.duration_ms ?? undefined,
     payload: JSON.parse(row.payload),

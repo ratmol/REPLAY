@@ -3,7 +3,7 @@
 // collector already validated everything on the way in, and its response
 // types are shared via replay-shared's RunSummary, not re-checked here.
 
-import type { RunSummary } from "replay-shared";
+import type { EventRecord, RunSummary } from "replay-shared";
 
 // No .env mechanism yet: every other package in this repo defaults to
 // localhost:4747 (the collector's own default port), so the dashboard does
@@ -18,4 +18,24 @@ export async function fetchRuns(): Promise<RunSummary[]> {
   }
   const body = (await response.json()) as { runs: RunSummary[] };
   return body.runs;
+}
+
+export async function fetchRun(runId: string): Promise<RunSummary> {
+  const response = await fetch(`${API_BASE}/runs/${encodeURIComponent(runId)}`);
+  if (!response.ok) {
+    throw new Error(`GET /runs/${runId} failed: ${response.status}`);
+  }
+  return (await response.json()) as RunSummary;
+}
+
+// Fetches a single page (collector default: first 500 events by seq). A run
+// with more events than that only shows the first 500 on the timeline -
+// full cursor-pagination looping is a reasonable v2, not core to "v1".
+export async function fetchEvents(runId: string): Promise<EventRecord[]> {
+  const response = await fetch(`${API_BASE}/runs/${encodeURIComponent(runId)}/events`);
+  if (!response.ok) {
+    throw new Error(`GET /runs/${runId}/events failed: ${response.status}`);
+  }
+  const body = (await response.json()) as { events: EventRecord[] };
+  return body.events;
 }
