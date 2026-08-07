@@ -37,6 +37,10 @@ Monorepo, pnpm workspaces.
 - **The SDK has zero runtime dependencies.** It shares schema types with the rest
   of the repo through type-only imports, which the compiler erases.
 - **The timeline is hand-built.** No charting library.
+- **New dependency versions are held back for 7 days before install** (pnpm's
+  `minimumReleaseAge`), and native postinstall scripts are blocked by default
+  except for an explicit, reviewed allowlist. Most recent npm supply-chain
+  incidents were caught and pulled within that window.
 
 Full data contract: [`docs/EVENT_SCHEMA.md`](docs/EVENT_SCHEMA.md). System
 design and the reasoning behind these decisions:
