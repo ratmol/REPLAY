@@ -7,8 +7,11 @@ Debugging an agent today means reading console logs and guessing why it looped,
 burned three dollars in tokens, or silently failed a tool call. Replay records
 the run as an append-only event log and gives you a scrubber to step through it.
 
-**Status: early scaffold. Not usable yet.** The event schema is specified, the
-implementation is not written.
+**Status: recording works end to end.** The SDK, collector, and storage layer
+are implemented and tested against a running instance, not just mocks. The
+dashboard can list runs and render a run's events on a timeline; the
+interactive scrubber (playhead, keyboard stepping, playback) is still in
+progress.
 
 ## Layout
 
@@ -35,7 +38,9 @@ Monorepo, pnpm workspaces.
   of the repo through type-only imports, which the compiler erases.
 - **The timeline is hand-built.** No charting library.
 
-Full data contract: [`docs/EVENT_SCHEMA.md`](docs/EVENT_SCHEMA.md).
+Full data contract: [`docs/EVENT_SCHEMA.md`](docs/EVENT_SCHEMA.md). System
+design and the reasoning behind these decisions:
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Setup
 
@@ -43,9 +48,10 @@ Node >= 20, pnpm.
 
 ```
 pnpm install
-pnpm typecheck        # all workspaces
-pnpm dev:collector    # collector on :4747
-pnpm dev:dashboard    # dashboard on :5173
+pnpm --filter replay-shared build   # sdk and collector consume its dist output
+pnpm typecheck                      # all workspaces
+pnpm dev:collector                  # collector on :4747
+pnpm dev:dashboard                  # dashboard on :5173
 ```
 
 `better-sqlite3` is a native module. It normally installs a prebuilt binary; if
