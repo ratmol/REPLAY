@@ -1,10 +1,7 @@
-import { useState } from "react";
+import { useState, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { EventRecord, EventType } from "replay-shared";
 import { pairEvents } from "../lib/pairing";
-
-// v1: static positioning, pairing, and zoom only. No playhead, no drag, no
-// keyboard stepping, no playback - that's roadmap 2.4, and CLAUDE.md
-// reserves the scrubber interaction logic for Adarsha to write himself.
+import { SCRUBBER_SPEED_LEVELS, type Scrubber } from "../hooks/useScrubber";
 
 const ZOOM_LEVELS = [0.25, 0.5, 1, 2, 4, 8];
 const DEFAULT_ZOOM_INDEX = 2; // 1x
@@ -36,9 +33,10 @@ function formatElapsed(ms: number): string {
 
 interface TimelineProps {
   events: EventRecord[];
+  scrubber: Scrubber;
 }
 
-export default function Timeline({ events }: TimelineProps) {
+export default function Timeline({ events, scrubber }: TimelineProps) {
   const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
 
   if (events.length === 0) {
@@ -52,37 +50,106 @@ export default function Timeline({ events }: TimelineProps) {
 
   const lastMs = new Date(events[events.length - 1]!.timestamp).getTime();
   const totalWidth = Math.max((lastMs - startMs) * pxPerMs + 40, 200);
+  const playheadX = Math.min(totalWidth, Math.max(0, (scrubber.currentMs - startMs) * pxPerMs));
 
   const ticks: number[] = [];
   for (let x = 0; x <= totalWidth; x += TICK_SPACING_PX) {
     ticks.push(x);
   }
 
+  function seekFromPointer(event: ReactPointerEvent<SVGSVGElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    scrubber.seek(startMs + x / pxPerMs);
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<SVGSVGElement>) {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    seekFromPointer(event);
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<SVGSVGElement>) {
+    if (event.buttons !== 1) {
+      return;
+    }
+    seekFromPointer(event);
+  }
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      scrubber.stepForward();
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      scrubber.stepBackward();
+    } else if (event.key === " ") {
+      event.preventDefault();
+      scrubber.togglePlay();
+    }
+  }
+
   return (
     <div>
-      <div className="mb-2 flex items-center gap-2">
-        <button
-          type="button"
-          className="rounded border border-border px-2 py-1 font-mono text-xs text-ink-muted hover:text-ink disabled:opacity-40"
-          onClick={() => setZoomIndex((i) => Math.max(0, i - 1))}
-          disabled={zoomIndex === 0}
-        >
-          −
-        </button>
-        <span className="w-10 text-center font-mono text-xs text-ink-muted">
-          {ZOOM_LEVELS[zoomIndex]}x
-        </span>
-        <button
-          type="button"
-          className="rounded border border-border px-2 py-1 font-mono text-xs text-ink-muted hover:text-ink disabled:opacity-40"
-          onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))}
-          disabled={zoomIndex === ZOOM_LEVELS.length - 1}
-        >
-          +
-        </button>
+      <div className="mb-2 flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="rounded border border-border px-2 py-1 font-mono text-xs text-ink-muted hover:text-ink disabled:opacity-40"
+            onClick={() => setZoomIndex((i) => Math.max(0, i - 1))}
+            disabled={zoomIndex === 0}
+          >
+            −
+          </button>
+          <span className="w-10 text-center font-mono text-xs text-ink-muted">
+            {ZOOM_LEVELS[zoomIndex]}x
+          </span>
+          <button
+            type="button"
+            className="rounded border border-border px-2 py-1 font-mono text-xs text-ink-muted hover:text-ink disabled:opacity-40"
+            onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))}
+            disabled={zoomIndex === ZOOM_LEVELS.length - 1}
+          >
+            +
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="rounded border border-border px-3 py-1 font-mono text-xs text-ink-muted hover:text-ink"
+            onClick={scrubber.togglePlay}
+          >
+            {scrubber.isPlaying ? "Pause" : "Play"}
+          </button>
+          <select
+            className="rounded border border-border bg-surface px-1 py-1 font-mono text-xs text-ink-muted hover:text-ink"
+            value={scrubber.speedIndex}
+            onChange={(event) => scrubber.setSpeedIndex(Number(event.target.value))}
+          >
+            {SCRUBBER_SPEED_LEVELS.map((level, index) => (
+              <option key={level} value={index}>
+                {level}x
+              </option>
+            ))}
+          </select>
+          <span className="font-mono text-xs text-ink-muted">
+            {formatElapsed(scrubber.currentMs - startMs)} / {formatElapsed(scrubber.maxMs - startMs)}
+          </span>
+        </div>
       </div>
-      <div className="overflow-x-auto rounded border border-border bg-surface-raised">
-        <svg width={totalWidth} height={TRACK_HEIGHT} className="block">
+
+      <div
+        className="overflow-x-auto rounded border border-border bg-surface-raised focus:outline focus:outline-1 focus:outline-phosphor"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+      >
+        <svg
+          width={totalWidth}
+          height={TRACK_HEIGHT}
+          className="block cursor-pointer"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+        >
           <line
             x1={0}
             y1={TRACK_HEIGHT / 2}
@@ -124,8 +191,24 @@ export default function Timeline({ events }: TimelineProps) {
               </circle>
             ),
           )}
+          <line
+            x1={playheadX}
+            y1={0}
+            x2={playheadX}
+            y2={TRACK_HEIGHT}
+            className="stroke-phosphor"
+            strokeWidth={2}
+          />
+          <polygon
+            points={`${playheadX - 5},0 ${playheadX + 5},0 ${playheadX},7`}
+            className="fill-phosphor"
+          />
         </svg>
       </div>
+      <p className="mt-1 font-mono text-[10px] text-ink-faint">
+        Click or drag the timeline to seek. Click it then use ←/→ to step between events, space to
+        play/pause.
+      </p>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import type { EventRecord, RunSummary } from "replay-shared";
 import { fetchEvents, fetchRun } from "../api";
 import { Link } from "../router";
 import Timeline from "../components/Timeline";
+import { useScrubber } from "../hooks/useScrubber";
 
 interface RunDetailPageProps {
   runId: string;
@@ -17,6 +18,11 @@ type LoadState =
 
 export default function RunDetailPage({ runId }: RunDetailPageProps) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  // Hooks can't be called conditionally, so this always runs, seeded with an
+  // empty array before the real events arrive - useScrubber's own effect
+  // resets the playhead once state.events actually changes.
+  const events = state.kind === "loaded" ? state.events : [];
+  const scrubber = useScrubber(events);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,7 +62,7 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
             {state.run.model ? ` · ${state.run.model}` : ""}
           </p>
           <div className="mt-6">
-            <Timeline events={state.events} />
+            <Timeline events={state.events} scrubber={scrubber} />
           </div>
         </div>
       )}
