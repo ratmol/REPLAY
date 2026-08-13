@@ -3,7 +3,7 @@
 // POST /runs, POST /runs/:id/events, PATCH /runs/:id, GET /runs,
 // GET /runs/:id, GET /runs/:id/events. Zod validation at the edge, the
 // documented error contract (docs/EVENT_SCHEMA.md section 6). Storage is
-// SQLite via store.ts/db.ts (roadmap 1.2).
+// SQLite via store.ts/db.ts.
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";

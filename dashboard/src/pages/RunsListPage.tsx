@@ -5,7 +5,7 @@ import RunRow from "../components/RunRow";
 
 // Minimal functional loading/error/empty handling only - a fetching page
 // can't work without *some* behavior for these. The actual VHS-styled
-// treatment for them is roadmap 2.7's polish pass, not this task.
+// treatment for them is a later polish pass, not this one.
 type LoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string }

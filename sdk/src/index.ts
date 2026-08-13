@@ -1,6 +1,6 @@
 // replay-sdk entry point.
 //
-// Roadmap 1.4 (hardening): wires the buffer built in 1.3 up to the collector.
+// Wires the in-memory buffer up to the collector over the network:
 // POST /runs, POST /runs/:id/events (chunked to the collector's 500-event cap),
 // flush on interval and on end(), one retry per request then give up silently.
 //
@@ -147,8 +147,8 @@ export class Run {
     this.buffer = new RingBuffer(config.maxBufferSize);
 
     // POST /runs creates the row; the SDK also emits run_start at seq 0 so
-    // the event log alone is a complete record (docs/EVENT_SCHEMA.md section
-    // 7, resolved during roadmap 0.2/1.1).
+    // the event log alone is a complete record (docs/EVENT_SCHEMA.md
+    // section 7).
     this.push("run_start", {
       agentName: options.agentName,
       model: options.model,

@@ -1,5 +1,5 @@
-// SQLite-backed storage layer (roadmap 1.2), replacing the in-memory
-// placeholder from 1.1. Function signatures are unchanged so index.ts's
+// SQLite-backed storage layer, replacing an earlier in-memory placeholder.
+// Function signatures are unchanged from that placeholder so index.ts's
 // routes didn't need to change.
 //
 // Idempotent retries rely on the unique index on events(run_id, seq)

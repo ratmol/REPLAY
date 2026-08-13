@@ -7,8 +7,8 @@ import type { EventRecord, RunSummary } from "replay-shared";
 
 // No .env mechanism yet: every other package in this repo defaults to
 // localhost:4747 (the collector's own default port), so the dashboard does
-// too. VITE_COLLECTOR_URL exists for later (the Vercel demo, roadmap 4.2)
-// without needing a committed .env file now.
+// too. VITE_COLLECTOR_URL exists for a future deployed environment without
+// needing a committed .env file now.
 const API_BASE = (import.meta.env.VITE_COLLECTOR_URL as string | undefined) ?? "http://localhost:4747";
 
 export async function fetchRuns(): Promise<RunSummary[]> {

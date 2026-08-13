@@ -10,7 +10,7 @@ interface RunDetailPageProps {
 }
 
 // Minimal functional loading/error handling only, same call as
-// RunsListPage - the styled treatment is roadmap 2.7's job.
+// RunsListPage - the styled treatment is a later polish pass.
 type LoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
