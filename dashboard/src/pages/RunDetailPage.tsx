@@ -4,6 +4,7 @@ import { fetchEvents, fetchRun } from "../api";
 import { Link } from "../router";
 import Timeline from "../components/Timeline";
 import EventInspector from "../components/EventInspector";
+import CostPanel from "../components/CostPanel";
 import { useScrubber } from "../hooks/useScrubber";
 import { isSameTimelineItem, type TimelineItem } from "../lib/pairing";
 
@@ -71,6 +72,10 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
             {state.run.status}
             {state.run.model ? ` · ${state.run.model}` : ""}
           </p>
+          <div className="mt-6">
+            <CostPanel run={state.run} events={state.events} />
+          </div>
+
           <div className="mt-6 md:flex md:items-start md:gap-6">
             <div className="min-w-0 flex-1">
               <Timeline events={state.events} scrubber={scrubber} selected={selected} onSelect={handleSelect} />
