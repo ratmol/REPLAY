@@ -2,6 +2,7 @@ import { useState, type PointerEvent as ReactPointerEvent, type KeyboardEvent as
 import type { EventRecord, EventType } from "replay-shared";
 import { isSameTimelineItem, pairEvents, type TimelineItem } from "../lib/pairing";
 import { SCRUBBER_SPEED_LEVELS, type Scrubber } from "../hooks/useScrubber";
+import StateMessage from "./StateMessage";
 
 const ZOOM_LEVELS = [0.25, 0.5, 1, 2, 4, 8];
 const DEFAULT_ZOOM_INDEX = 2; // 1x
@@ -42,7 +43,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
   const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
 
   if (events.length === 0) {
-    return <p className="text-sm text-ink-muted">No events recorded for this run.</p>;
+    return <StateMessage kind="empty" message="No events recorded for this run." />;
   }
 
   const items = pairEvents(events);

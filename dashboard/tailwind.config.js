@@ -36,6 +36,30 @@ export default {
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
         sans: ["ui-sans-serif", "system-ui", "-apple-system", "sans-serif"],
       },
+      keyframes: {
+        // The tape "settling in" on first load - a few hundred ms of
+        // sub-pixel vertical drift, not a bounce or a shake. Runs once
+        // (App.tsx applies the animate-* utility to a node that mounts
+        // exactly once per page load, not per route change).
+        "crt-wobble": {
+          "0%": { transform: "translateY(-2px)", opacity: "0.85" },
+          "15%": { transform: "translateY(1px)", opacity: "1" },
+          "30%": { transform: "translateY(-1px)" },
+          "50%": { transform: "translateY(0.5px)" },
+          "100%": { transform: "translateY(0)", opacity: "1" },
+        },
+        // A quiet three-dot "loading" pulse, staggered per-dot via
+        // animation-delay at the call site - deliberately not a spinner,
+        // which would read as busy/urgent rather than calm.
+        "loading-pulse": {
+          "0%, 100%": { opacity: "0.25" },
+          "50%": { opacity: "1" },
+        },
+      },
+      animation: {
+        "crt-wobble": "crt-wobble 480ms ease-out 1",
+        "loading-pulse": "loading-pulse 1.2s ease-in-out infinite",
+      },
     },
   },
   plugins: [],

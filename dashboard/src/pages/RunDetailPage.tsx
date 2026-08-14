@@ -5,6 +5,7 @@ import { Link } from "../router";
 import Timeline from "../components/Timeline";
 import EventInspector from "../components/EventInspector";
 import CostPanel from "../components/CostPanel";
+import StateMessage from "../components/StateMessage";
 import { useScrubber } from "../hooks/useScrubber";
 import { isSameTimelineItem, type TimelineItem } from "../lib/pairing";
 
@@ -12,8 +13,6 @@ interface RunDetailPageProps {
   runId: string;
 }
 
-// Minimal functional loading/error handling only, same call as
-// RunsListPage - the styled treatment is a later polish pass.
 type LoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
@@ -61,9 +60,17 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
         &larr; Runs
       </Link>
 
-      {state.kind === "loading" && <p className="mt-4 text-sm text-ink-muted">Loading run...</p>}
+      {state.kind === "loading" && (
+        <div className="mt-4">
+          <StateMessage kind="loading" message="Loading run" />
+        </div>
+      )}
 
-      {state.kind === "error" && <p className="mt-4 text-sm text-status-failed">{state.message}</p>}
+      {state.kind === "error" && (
+        <div className="mt-4">
+          <StateMessage kind="error" message={state.message} />
+        </div>
+      )}
 
       {state.kind === "loaded" && (
         <div className="mt-4">
