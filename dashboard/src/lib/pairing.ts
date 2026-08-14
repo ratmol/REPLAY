@@ -15,6 +15,19 @@ function itemSeq(item: TimelineItem): number {
   return item.kind === "span" ? item.start.seq : item.event.seq;
 }
 
+// Structural equality for two TimelineItem values, used by Timeline to
+// highlight the selected item and by RunDetailPage to toggle selection off on
+// a second click. Compares by kind + underlying seq, not object identity:
+// pairEvents() rebuilds the whole array (and its item objects) on every
+// events-prop change, so `===` would silently break the highlight on any
+// re-render even though "the same event" is still selected.
+export function isSameTimelineItem(a: TimelineItem | null, b: TimelineItem | null): boolean {
+  if (a === null || b === null) {
+    return a === b;
+  }
+  return a.kind === b.kind && itemSeq(a) === itemSeq(b);
+}
+
 export function pairEvents(events: EventRecord[]): TimelineItem[] {
   const sorted = [...events].sort((a, b) => a.seq - b.seq);
   const usedSeqs = new Set<number>();

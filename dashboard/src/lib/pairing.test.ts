@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { EventRecord } from "replay-shared";
-import { pairEvents } from "./pairing.js";
+import { isSameTimelineItem, pairEvents } from "./pairing.js";
 
 function event(seq: number, type: EventRecord["type"], payload: Record<string, unknown> = {}): EventRecord {
   return { seq, type, timestamp: `2026-01-01T00:00:${String(seq).padStart(2, "0")}Z`, payload };
@@ -113,4 +113,33 @@ test("an unrelated event between a tool_call and its result stays its own point"
   assert.equal(items.length, 2);
   assert.deepEqual(items[0], { kind: "span", type: "tool_call", start: events[0], end: events[2] });
   assert.deepEqual(items[1], { kind: "point", type: "retry", event: events[1] });
+});
+
+test("isSameTimelineItem treats two null selections as equal", () => {
+  assert.ok(isSameTimelineItem(null, null));
+});
+
+test("isSameTimelineItem treats null and a selection as different", () => {
+  const point: ReturnType<typeof pairEvents>[number] = { kind: "point", type: "run_start", event: event(0, "run_start") };
+  assert.ok(!isSameTimelineItem(null, point));
+  assert.ok(!isSameTimelineItem(point, null));
+});
+
+test("isSameTimelineItem compares points by seq, not object identity", () => {
+  const a = { kind: "point" as const, type: "run_start" as const, event: event(0, "run_start") };
+  const b = { kind: "point" as const, type: "run_start" as const, event: event(0, "run_start") };
+  const c = { kind: "point" as const, type: "run_start" as const, event: event(1, "run_start") };
+  assert.ok(isSameTimelineItem(a, b));
+  assert.ok(!isSameTimelineItem(a, c));
+});
+
+test("isSameTimelineItem does not confuse a span with a point sharing its start seq", () => {
+  const span = {
+    kind: "span" as const,
+    type: "tool_call" as const,
+    start: event(0, "tool_call", { callId: "a" }),
+    end: event(1, "tool_result", { callId: "a" }),
+  };
+  const point = { kind: "point" as const, type: "tool_call" as const, event: event(0, "tool_call", { callId: "a" }) };
+  assert.ok(!isSameTimelineItem(span, point));
 });

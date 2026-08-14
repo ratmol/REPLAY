@@ -3,7 +3,9 @@ import type { EventRecord, RunSummary } from "replay-shared";
 import { fetchEvents, fetchRun } from "../api";
 import { Link } from "../router";
 import Timeline from "../components/Timeline";
+import EventInspector from "../components/EventInspector";
 import { useScrubber } from "../hooks/useScrubber";
+import { isSameTimelineItem, type TimelineItem } from "../lib/pairing";
 
 interface RunDetailPageProps {
   runId: string;
@@ -23,10 +25,18 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
   // resets the playhead once state.events actually changes.
   const events = state.kind === "loaded" ? state.events : [];
   const scrubber = useScrubber(events);
+  const [selected, setSelected] = useState<TimelineItem | null>(null);
+
+  function handleSelect(item: TimelineItem) {
+    // Clicking the already-selected event closes the inspector instead of
+    // re-selecting it - the common "toggle" behavior for a detail panel.
+    setSelected((current) => (isSameTimelineItem(current, item) ? null : item));
+  }
 
   useEffect(() => {
     let cancelled = false;
     setState({ kind: "loading" });
+    setSelected(null);
     Promise.all([fetchRun(runId), fetchEvents(runId)])
       .then(([run, events]) => {
         if (!cancelled) {
@@ -61,8 +71,13 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
             {state.run.status}
             {state.run.model ? ` · ${state.run.model}` : ""}
           </p>
-          <div className="mt-6">
-            <Timeline events={state.events} scrubber={scrubber} />
+          <div className="mt-6 md:flex md:items-start md:gap-6">
+            <div className="min-w-0 flex-1">
+              <Timeline events={state.events} scrubber={scrubber} selected={selected} onSelect={handleSelect} />
+            </div>
+            <div className="mt-4 md:mt-0 md:w-80 md:shrink-0">
+              <EventInspector item={selected} onClose={() => setSelected(null)} />
+            </div>
           </div>
         </div>
       )}

@@ -1,6 +1,6 @@
 import { useState, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { EventRecord, EventType } from "replay-shared";
-import { pairEvents } from "../lib/pairing";
+import { isSameTimelineItem, pairEvents, type TimelineItem } from "../lib/pairing";
 import { SCRUBBER_SPEED_LEVELS, type Scrubber } from "../hooks/useScrubber";
 
 const ZOOM_LEVELS = [0.25, 0.5, 1, 2, 4, 8];
@@ -34,9 +34,11 @@ function formatElapsed(ms: number): string {
 interface TimelineProps {
   events: EventRecord[];
   scrubber: Scrubber;
+  selected: TimelineItem | null;
+  onSelect: (item: TimelineItem) => void;
 }
 
-export default function Timeline({ events, scrubber }: TimelineProps) {
+export default function Timeline({ events, scrubber, selected, onSelect }: TimelineProps) {
   const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
 
   if (events.length === 0) {
@@ -166,8 +168,10 @@ export default function Timeline({ events, scrubber }: TimelineProps) {
               </text>
             </g>
           ))}
-          {items.map((item) =>
-            item.kind === "span" ? (
+          {items.map((item) => {
+            const isSelected = isSameTimelineItem(item, selected);
+            const selectionClass = isSelected ? "stroke-ink stroke-2" : "stroke-none";
+            return item.kind === "span" ? (
               <rect
                 key={`span-${item.start.seq}`}
                 x={toX(item.start.timestamp)}
@@ -175,7 +179,8 @@ export default function Timeline({ events, scrubber }: TimelineProps) {
                 width={Math.max(toX(item.end.timestamp) - toX(item.start.timestamp), 3)}
                 height={16}
                 rx={3}
-                className={EVENT_COLOR[item.type]}
+                className={`${EVENT_COLOR[item.type]} ${selectionClass} cursor-pointer`}
+                onClick={() => onSelect(item)}
               >
                 <title>{`${item.type} - seq ${item.start.seq} to ${item.end.seq}`}</title>
               </rect>
@@ -185,12 +190,13 @@ export default function Timeline({ events, scrubber }: TimelineProps) {
                 cx={toX(item.event.timestamp)}
                 cy={TRACK_HEIGHT / 2}
                 r={5}
-                className={EVENT_COLOR[item.type]}
+                className={`${EVENT_COLOR[item.type]} ${selectionClass} cursor-pointer`}
+                onClick={() => onSelect(item)}
               >
                 <title>{`${item.type} - seq ${item.event.seq}`}</title>
               </circle>
-            ),
-          )}
+            );
+          })}
           <line
             x1={playheadX}
             y1={0}
@@ -206,8 +212,8 @@ export default function Timeline({ events, scrubber }: TimelineProps) {
         </svg>
       </div>
       <p className="mt-1 font-mono text-[10px] text-ink-faint">
-        Click or drag the timeline to seek. Click it then use ←/→ to step between events, space to
-        play/pause.
+        Click or drag the timeline to seek. Click an event to inspect it. Click the track then use
+        ←/→ to step between events, space to play/pause.
       </p>
     </div>
   );
