@@ -67,6 +67,13 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
   }
 
   function handlePointerDown(event: ReactPointerEvent<SVGSVGElement>) {
+    // setPointerCapture redirects every subsequent pointer/mouse event for
+    // this pointer - including the click that fires on release - to the
+    // capturing element (this <svg>), not whatever was actually under the
+    // cursor. That's why event selection is wired to onPointerDown directly
+    // on each shape below, not onClick: by the time capture takes effect,
+    // a click on a shape would already have been retargeted to the track
+    // background and silently never fire the shape's own handler.
     event.currentTarget.setPointerCapture(event.pointerId);
     seekFromPointer(event);
   }
@@ -181,7 +188,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
                 height={16}
                 rx={3}
                 className={`${EVENT_COLOR[item.type]} ${selectionClass} cursor-pointer`}
-                onClick={() => onSelect(item)}
+                onPointerDown={() => onSelect(item)}
               >
                 <title>{`${item.type} - seq ${item.start.seq} to ${item.end.seq}`}</title>
               </rect>
@@ -192,7 +199,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
                 cy={TRACK_HEIGHT / 2}
                 r={5}
                 className={`${EVENT_COLOR[item.type]} ${selectionClass} cursor-pointer`}
-                onClick={() => onSelect(item)}
+                onPointerDown={() => onSelect(item)}
               >
                 <title>{`${item.type} - seq ${item.event.seq}`}</title>
               </circle>
