@@ -10,4 +10,6 @@ step between events, space or the play button to play back at an adjustable
 speed. Clicking an event opens a side panel with its fields, a formatted
 JSON payload view, a truncated-payload badge, and a copy button. A cost
 panel shows total cost and tokens, a per-step breakdown, and a hand-built
-cost-over-time sparkline. The VHS polish pass lands in a later Phase 2 task.
+cost-over-time sparkline. Loading/error/empty states share one styled
+component; a faint permanent scanline overlay and a one-time tracking
+wobble on load round out the CRT/VHS aesthetic.
