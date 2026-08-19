@@ -4,6 +4,7 @@ import { fetchRuns } from "../api";
 import RunRow, { RUN_ROW_GRID } from "../components/RunRow";
 import StateMessage from "../components/StateMessage";
 import AboutSection from "../components/AboutSection";
+import HeroPreview from "../components/HeroPreview";
 
 type LoadState =
   | { kind: "loading" }
@@ -32,8 +33,22 @@ export default function RunsListPage() {
     };
   }, []);
 
+  // Prefer a completed run for the hero preview - a nicer first impression
+  // than a still-running or failed one, but either works if that's all
+  // there is.
+  const previewRun =
+    state.kind === "loaded"
+      ? (state.runs.find((run) => run.status === "completed") ?? state.runs[0])
+      : undefined;
+
   return (
     <div>
+      {previewRun && (
+        <div className="mb-8">
+          <HeroPreview runId={previewRun.id} runName={previewRun.name} />
+        </div>
+      )}
+
       <AboutSection />
 
       <section className="mt-2 border-t border-border pt-6">
