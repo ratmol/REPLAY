@@ -6,6 +6,7 @@ import Timeline from "../components/Timeline";
 import EventInspector from "../components/EventInspector";
 import CostPanel from "../components/CostPanel";
 import StateMessage from "../components/StateMessage";
+import { STATUS_COLOR } from "../components/RunRow";
 import { useScrubber } from "../hooks/useScrubber";
 import { isSameTimelineItem, type TimelineItem } from "../lib/pairing";
 
@@ -76,8 +77,12 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
         <div className="mt-4">
           <h2 className="text-ink">{state.run.name}</h2>
           <p className="mt-1 font-mono text-xs text-ink-muted">
-            {state.run.status}
+            <span className={`uppercase tracking-wide ${STATUS_COLOR[state.run.status]}`}>
+              {state.run.status}
+            </span>
             {state.run.model ? ` · ${state.run.model}` : ""}
+            {" · "}
+            {new Date(state.run.startedAt).toLocaleString()}
           </p>
           <div className="mt-6">
             <CostPanel run={state.run} events={state.events} />

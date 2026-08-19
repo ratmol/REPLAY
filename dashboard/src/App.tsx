@@ -25,6 +25,10 @@ export default function App() {
           so it never replays on run-to-run navigation. */}
       <main className="min-h-screen animate-crt-wobble px-6 py-8">
         <h1 className="font-mono text-lg tracking-wide text-ink">replay</h1>
+        <p className="mt-1 text-xs text-ink-muted">
+          Flight recorder for AI agents - every tool call, retry, and dollar
+          spent, recorded and replayable on a timeline.
+        </p>
         <div className="mt-6">
           {match ? <RunDetailPage runId={decodeURIComponent(match[1]!)} /> : <RunsListPage />}
         </div>

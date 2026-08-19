@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { RunSummary } from "replay-shared";
 import { fetchRuns } from "../api";
-import RunRow from "../components/RunRow";
+import RunRow, { RUN_ROW_GRID } from "../components/RunRow";
 import StateMessage from "../components/StateMessage";
 
 type LoadState =
@@ -44,12 +44,23 @@ export default function RunsListPage() {
   }
 
   return (
-    <ul className="divide-y divide-border">
-      {state.runs.map((run) => (
-        <li key={run.id}>
-          <RunRow run={run} />
-        </li>
-      ))}
-    </ul>
+    <div>
+      <div
+        className={`${RUN_ROW_GRID} border-b border-border pb-2 font-mono text-[10px] uppercase tracking-wide text-ink-faint`}
+      >
+        <span>Status</span>
+        <span>Run</span>
+        <span>Model</span>
+        <span className="text-right">Duration</span>
+        <span className="text-right">Cost</span>
+      </div>
+      <ul className="divide-y divide-border">
+        {state.runs.map((run) => (
+          <li key={run.id}>
+            <RunRow run={run} />
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
