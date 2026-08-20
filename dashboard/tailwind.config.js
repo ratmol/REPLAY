@@ -3,8 +3,9 @@
 // components hardcoded the ground colour as a raw hex inside an arbitrary
 // Tailwind value, which meant a palette change silently left two gradients
 // pointing at the old scheme.
-const SURFACE_DEEP = "#0a0908";
-const SURFACE = "#100e0d";
+const SURFACE_DEEP = "#0c0a07";
+const SURFACE = "#15110c";
+const STEEL_DIM = "#39414b";
 
 /** @type {import('tailwindcss').Config} */
 export default {
@@ -32,10 +33,20 @@ export default {
           faint: "#8b827a", // tertiary / micro-labels, ~4.6:1
         },
         signal: {
-          // The one accent. Interactive, brand, and playhead only - never a
+          // The hot accent. Interactive, brand, and playhead only - never a
           // status, so it can never be confused with a run outcome.
           DEFAULT: "#ff6b35",
           dim: "#b8461f",
+        },
+        brass: {
+          // The second, quiet warm tone - a desaturated gold for engraved
+          // labels, eyebrows, and section markers. This is the answer to
+          // "the type is only two colours": it sits between the off-white
+          // ink and the hot signal, warm enough to belong to the same lamp
+          // family without competing with the accent for attention. Muted on
+          // purpose - a vibrant gold would read as a second CTA.
+          DEFAULT: "#c6a06a",
+          dim: "#8a6f47",
         },
         status: {
           // Three distinct hues, none of them the accent: an amber that reads
@@ -46,17 +57,60 @@ export default {
           completed: "#4fb8a8",
           failed: "#e8556a",
         },
+        steel: {
+          // The second temperature, and the reason this stops reading as
+          // "dark page, one accent colour". Every structural mark that is not
+          // content - bezels, grid lines, rules, axis ticks, disabled chrome -
+          // is cool grey-blue, so the warm hues are reserved for things that
+          // carry meaning. A single-temperature dark theme is the tell; real
+          // instrument panels are cold metal with warm lamps on them.
+          DEFAULT: "#7c8896", // ~4.9:1, usable for secondary text
+          dim: STEEL_DIM,
+          deep: "#20262d",
+        },
+        glass: {
+          // The glass of a lit display: near-black with a cold cast, so an
+          // amber or teal number sitting on it looks emitted rather than
+          // printed.
+          //
+          // Named `glass` and not `readout` even though that is what it is
+          // for: a colour called readout generates `text-readout`, which
+          // collides with the fontSize of the same name and silently wins.
+          // That shipped for one build as near-black text on a near-black
+          // panel - the readouts were there and simply invisible.
+          DEFAULT: "#070a0b",
+          edge: "#161b1f",
+        },
         border: {
           DEFAULT: "#2b2724",
           bright: "#3e3934",
         },
       },
+      boxShadow: {
+        // Light comes from above, once, consistently. The inset hairline is
+        // the whole trick: a 1px top highlight turns a flat rectangle into a
+        // machined face without a gradient, a blur, or a glass effect.
+        panel: `inset 0 1px 0 0 rgba(255, 255, 255, 0.045), 0 1px 2px 0 rgba(0, 0, 0, 0.6)`,
+        glass: `inset 0 1px 3px 0 rgba(0, 0, 0, 0.9), inset 0 0 0 1px ${STEEL_DIM}`,
+        // Used only on the element a keyboard user is actually on.
+        focus: `0 0 0 1px #ff6b35, 0 0 0 4px rgba(255, 107, 53, 0.18)`,
+      },
       backgroundImage: {
+        // Fine engineering graticule for panel interiors. Two 1px lines at 32px
+        // pitch - present enough that a panel reads as a measured surface,
+        // faint enough that it never competes with the data drawn on it.
+        graticule: `linear-gradient(${STEEL_DIM}16 1px, transparent 1px), linear-gradient(90deg, ${STEEL_DIM}16 1px, transparent 1px)`,
         // Horizontal edge-feathers for the tape and the event ticker: content
         // dissolves into the ground instead of being cut off against a hard
         // border.
         "fade-x-deep": `linear-gradient(to right, ${SURFACE_DEEP}, transparent 12%, transparent 88%, ${SURFACE_DEEP})`,
         "fade-x-surface": `linear-gradient(to right, ${SURFACE}, transparent 18%, transparent 82%, ${SURFACE})`,
+      },
+      backgroundSize: {
+        // Named differently from the backgroundImage key on purpose: Tailwind
+        // generates `bg-graticule` for both scales, and one silently shadows
+        // the other.
+        "grid-32": "32px 32px",
       },
       fontSize: {
         // Fluid display scale. The brief is oversized type, and clamp() means
@@ -67,7 +121,14 @@ export default {
           "clamp(1.75rem, 4.5vw, 3.25rem)",
           { lineHeight: "1.02", letterSpacing: "-0.03em" },
         ],
-        micro: ["0.625rem", { lineHeight: "1.1", letterSpacing: "0.18em" }],
+        // Engraved panel labels. Small, wide, and uppercase is how a physical
+        // instrument names a dial, and it is the one place tiny type is
+        // correct rather than lazy.
+        micro: ["0.6875rem", { lineHeight: "1.1", letterSpacing: "0.18em" }],
+        // Lit numeric displays. Deliberately larger than body copy - on a real
+        // panel the number is the thing you read from across the cockpit.
+        readout: ["1.375rem", { lineHeight: "1", letterSpacing: "0.01em" }],
+        "readout-lg": ["2.75rem", { lineHeight: "1", letterSpacing: "-0.01em" }],
       },
       fontFamily: {
         // System stacks only - no webfont network request, consistent with

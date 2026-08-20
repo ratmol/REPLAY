@@ -5,6 +5,20 @@
 @layer base {
   body {
     @apply bg-surface-deep text-ink font-sans antialiased;
+    /* Base size bumped from the browser default 16px: this is a page of dense
+       technical prose read at a laptop's arm length, and 16px monospace
+       payload dumps next to 16px body copy was the reason everything felt
+       cramped. */
+    font-size: 17px;
+  }
+
+  /* Numbers on an instrument are read by shape, not by spelling. Tabular
+     figures stop a live-updating readout from reflowing character by
+     character as it counts, and a slashed zero is the aviation convention for
+     telling 0 from O in a fixed-width field. Scoped to monospace, so prose
+     keeps proportional figures. */
+  .font-mono {
+    font-variant-numeric: tabular-nums slashed-zero;
   }
 
   /* Atmosphere, not decoration: a single fixed film-grain layer so the dark
@@ -24,7 +38,7 @@
   /* Keyboard users must always be able to see where they are - the CRT
      palette is low-contrast enough that the UA default outline disappears. */
   :focus-visible {
-    @apply outline-none ring-1 ring-signal ring-offset-2 ring-offset-surface-deep;
+    @apply outline-none shadow-focus;
   }
 }
 

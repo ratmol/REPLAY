@@ -23,7 +23,13 @@ export default function InstrumentPanel({
   className?: string;
 }) {
   return (
-    <div className={`relative border border-border bg-surface ${className ?? ""}`}>
+    // The panel material: a machined face, not a card. shadow-panel is a 1px
+    // inset top highlight plus a shallow drop - light from above, once. The
+    // graticule is a 32px engineering grid at ~13% alpha, present enough to
+    // read as a measured surface and faint enough to disappear behind data.
+    <div
+      className={`relative border border-steel-deep bg-surface bg-graticule bg-grid-32 shadow-panel ${className ?? ""}`}
+    >
       <CornerBrackets />
       {children}
     </div>
@@ -31,7 +37,7 @@ export default function InstrumentPanel({
 }
 
 function CornerBrackets() {
-  const corner = "absolute h-3 w-3 border-signal-dim/50";
+  const corner = "absolute h-3 w-3 border-steel-dim";
   return (
     <span aria-hidden="true">
       <span className={`${corner} left-0 top-0 border-l border-t`} />

@@ -12,6 +12,9 @@
 // instrument.
 
 import InstrumentPanel from "./InstrumentPanel";
+import Reveal from "./Reveal";
+import { EVENT_CATEGORY, EVENT_TEXT } from "../lib/eventColor";
+import type { EventType } from "replay-shared";
 
 const QUICKSTART = `import { Replay } from "replay-sdk";
 
@@ -75,27 +78,27 @@ export default function SpecSection() {
           the code block's longest line forces the whole track wider than the
           viewport instead of scrolling inside its own overflow-x-auto box. */}
       <div className="mt-12 grid gap-12 lg:grid-cols-2">
-        <div className="min-w-0">
-          <h3 className="font-mono text-micro uppercase text-ink-faint">Add it to an agent</h3>
+        <Reveal className="min-w-0">
+          <h3 className="font-mono text-micro uppercase text-brass">Add it to an agent</h3>
           <InstrumentPanel className="mt-3 overflow-x-auto p-5">
             <pre className="font-mono text-sm leading-relaxed text-ink-muted">{QUICKSTART}</pre>
           </InstrumentPanel>
 
-          <h3 className="mt-10 font-mono text-micro uppercase text-ink-faint">Nine event types</h3>
+          <h3 className="mt-10 font-mono text-micro uppercase text-brass">Nine event types</h3>
           <ul className="mt-3 flex flex-wrap gap-2">
             {EVENT_TYPES.map((type) => (
               <li
                 key={type}
-                className="border border-border px-2 py-1 font-mono text-sm text-ink-muted"
+                className={`border border-steel-deep bg-glass px-2 py-1 font-mono text-sm ${EVENT_TEXT[EVENT_CATEGORY[type as EventType]]}`}
               >
                 {type}
               </li>
             ))}
           </ul>
-        </div>
+        </Reveal>
 
-        <div className="min-w-0">
-          <h3 className="font-mono text-micro uppercase text-ink-faint">The whole API</h3>
+        <Reveal className="min-w-0" delayMs={120}>
+          <h3 className="font-mono text-micro uppercase text-brass">The whole API</h3>
           <InstrumentPanel className="mt-3 p-5">
             <table className="w-full border-collapse">
               <tbody>
@@ -119,7 +122,7 @@ export default function SpecSection() {
             </table>
           </InstrumentPanel>
 
-          <h3 className="mt-10 font-mono text-micro uppercase text-ink-faint">What it promises</h3>
+          <h3 className="mt-10 font-mono text-micro uppercase text-brass">What it promises</h3>
           <dl className="mt-3 space-y-5">
             {GUARANTEES.map((guarantee) => (
               <div key={guarantee.title}>
@@ -128,7 +131,7 @@ export default function SpecSection() {
               </div>
             ))}
           </dl>
-        </div>
+        </Reveal>
       </div>
     </section>
   );

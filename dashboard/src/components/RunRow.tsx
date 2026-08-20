@@ -37,7 +37,7 @@ function formatCost(costUsd: number): string {
 // 375px phone into horizontal scroll. Status, name, and cost are the three
 // that answer "which run do I want".
 export const RUN_ROW_GRID =
-  "grid grid-cols-[64px_1fr_80px] items-center gap-3 md:grid-cols-[90px_1fr_120px_70px_90px] md:gap-4";
+  "grid grid-cols-[64px_1fr_80px] items-center gap-3 md:grid-cols-[90px_1fr_150px_70px_90px] md:gap-4";
 export const RUN_ROW_DESKTOP_ONLY = "hidden md:block";
 
 interface RunRowProps {
@@ -66,7 +66,7 @@ export default function RunRow({ run }: RunRowProps) {
       </span>
       <span className={RUN_ROW_DESKTOP_ONLY}>
         {run.model && (
-          <span className="rounded border border-border px-2 py-0.5 font-mono text-xs text-ink-muted">
+          <span className="inline-block whitespace-nowrap rounded-sm border border-steel-deep bg-glass px-2 py-0.5 font-mono text-xs text-brass">
             {run.model}
           </span>
         )}
