@@ -13,7 +13,7 @@
 // detail timeline uses. Every number on the instrument strip is read off the
 // event log.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { EventRecord } from "replay-shared";
 import { fetchEvents } from "../api";
 import { EVENT_FILL } from "../lib/eventColor";
@@ -21,6 +21,8 @@ import { altitudeAtX, buildFlightPath } from "../lib/flightPath";
 import { eventIndexAtProgress, timecode } from "../lib/scrollTape";
 import { useScrollProgress } from "../hooks/useScrollProgress";
 import { Link } from "../router";
+import Readout from "./Readout";
+import { EVENT_CATEGORY, EVENT_TEXT } from "../lib/eventColor";
 
 // The route is drawn at a fixed intrinsic width and slid horizontally behind a
 // stationary aircraft - the world moves, the cockpit does not, which is how it
@@ -88,7 +90,7 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
             spentUsd={currentPoint?.cumulativeCostUsd ?? 0}
           />
           <Route points={points} progress={progress} />
-          <p className="mt-3 text-right font-mono text-micro uppercase text-ink-faint">
+          <p className="mt-3 text-right font-mono text-micro uppercase text-steel">
             {progress > 0.02 ? `${Math.round(progress * 100)} percent flown` : "Scroll to fly"}
           </p>
         </div>
@@ -98,16 +100,27 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
 }
 
 function HeroCopy({ progress }: { progress: number }) {
-  // The headline recedes as the flight takes over - one continuous move rather
-  // than two focal points competing. Inline transform/opacity only, because
+  // The headline hands off to the flight as you scroll - one continuous move
+  // rather than two focal points competing. It fully clears out (opacity 0,
+  // lifted away) instead of lingering half-faded, which read as "stuck": the
+  // copy has said its piece by the time the instrument is worth watching.
+  // reaches 0 at ~55% of the scrub so the flight has the frame to itself for
+  // the second half. pointer-events are dropped once it is gone so it never
+  // eats a click meant for the tape beneath it. transform/opacity only, since
   // these are per-frame values no Tailwind token can express.
-  const recede = Math.min(progress * 1.6, 1);
+  const recede = Math.min(progress / 0.55, 1);
+  const gone = recede >= 1;
   return (
     <header
+      aria-hidden={gone}
       className="max-w-4xl will-change-transform"
-      style={{ opacity: 1 - recede * 0.75, transform: `translateY(${-recede * 40}px)` }}
+      style={{
+        opacity: 1 - recede,
+        transform: `translateY(${-recede * 72}px)`,
+        pointerEvents: gone ? "none" : undefined,
+      }}
     >
-      <p className="font-mono text-micro uppercase text-signal">Flight recorder for AI agents</p>
+      <p className="font-mono text-micro uppercase text-brass">Flight recorder for AI agents</p>
       <h1 className="mt-5 text-display font-medium text-ink">
         Play the run
         <br />
@@ -143,38 +156,38 @@ function InstrumentStrip({
   return (
     <div className="mb-3 flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
       <dl className="flex flex-wrap gap-x-8 gap-y-2">
-        <Readout label="Flight">
+        <Plate label="Flight">
           <Link to={`/runs/${runId}`} className="text-ink hover:text-signal">
             {runName}
           </Link>
-        </Readout>
-        {agentName && <Readout label="Agent">{agentName}</Readout>}
-        {model && <Readout label="Aircraft">{model}</Readout>}
-        <Readout label="Event">
-          {current.type} <span className="text-ink-faint">seq {current.seq}</span>
-        </Readout>
+        </Plate>
+        {agentName && <Plate label="Agent">{agentName}</Plate>}
+        {model && <Plate label="Aircraft">{model}</Plate>}
+        <Plate label="Event">
+          <span className={EVENT_TEXT[EVENT_CATEGORY[current.type]]}>{current.type}</span>{" "}
+          <span className="text-steel">seq {current.seq}</span>
+        </Plate>
       </dl>
-      <div className="flex items-end gap-8">
-        <div className="text-right">
-          <p className="font-mono text-micro uppercase text-ink-faint">Spent</p>
-          <p className="mt-1 font-mono text-xl tabular-nums text-ink">${spentUsd.toFixed(4)}</p>
-        </div>
-        <div className="text-right">
-          <p className="font-mono text-micro uppercase text-ink-faint">Elapsed</p>
-          <p className="mt-1 font-mono text-4xl tabular-nums tracking-tight text-signal">
-            {timecode(elapsedMs)}
-          </p>
-        </div>
+      <div className="flex items-end gap-6">
+        <Readout label="Spent" align="right">
+          ${spentUsd.toFixed(4)}
+        </Readout>
+        <Readout label="Elapsed" tone="signal" size="lg" align="right">
+          {timecode(elapsedMs)}
+        </Readout>
       </div>
     </div>
   );
 }
 
-function Readout({ label, children }: { label: string; children: React.ReactNode }) {
+// An engraved nameplate, not a lit display: these are labels for the flight,
+// fixed for its whole duration. Only the two values that actually change while
+// you scroll get the glass treatment, which is what keeps the eye on them.
+function Plate({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <dt className="font-mono text-micro uppercase text-ink-faint">{label}</dt>
-      <dd className="mt-1 font-mono text-sm text-ink-muted">{children}</dd>
+      <dt className="font-mono text-micro uppercase text-steel">{label}</dt>
+      <dd className="mt-1.5 font-mono text-base text-ink-muted">{children}</dd>
     </div>
   );
 }
@@ -194,7 +207,7 @@ function Route({
   const trail = [...flown.map((point) => `${point.x},${point.y}`), `${aircraftX},${aircraftY}`];
 
   return (
-    <div className="relative overflow-hidden border-y border-border bg-surface">
+    <div className="relative overflow-hidden border-y border-steel-deep bg-surface bg-graticule bg-grid-32">
       <div
         className="will-change-transform"
         style={{ transform: `translateX(calc(50% - ${aircraftX}px))` }}
@@ -219,7 +232,7 @@ function Route({
           <polyline
             points={points.map((point) => `${point.x},${point.y}`).join(" ")}
             fill="none"
-            className="stroke-border-bright"
+            className="stroke-steel-dim"
             strokeWidth={1.5}
           />
           <polyline

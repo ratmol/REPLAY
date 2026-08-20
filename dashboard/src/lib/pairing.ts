@@ -119,3 +119,30 @@ export function itemAtTime(
 
   return nearestDistance <= toleranceMs ? nearestPoint : null;
 }
+
+/**
+ * The timeline item that contains a given seq, or null.
+ *
+ * Used to restore a shared link (?seq=N) to the same selection the person who
+ * copied it was looking at. A span is matched by either of its ends, because
+ * the link may point at a tool_result while the thing on screen is the
+ * call/result pair it belongs to - landing on "nothing selected" because the
+ * seq was the closing half would make shared links quietly unreliable.
+ */
+export function itemBySeq(items: TimelineItem[], seq: number): TimelineItem | null {
+  for (const item of items) {
+    if (
+      item.kind === "point"
+        ? item.event.seq === seq
+        : item.start.seq === seq || item.end.seq === seq
+    ) {
+      return item;
+    }
+  }
+  return null;
+}
+
+/** The seq a selection should be shared as: a span is identified by its start. */
+export function itemStartSeq(item: TimelineItem): number {
+  return item.kind === "span" ? item.start.seq : item.event.seq;
+}

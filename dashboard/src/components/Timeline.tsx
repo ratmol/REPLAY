@@ -8,7 +8,8 @@ import { isSameTimelineItem, itemAtTime, pairEvents, type TimelineItem } from ".
 import { SCRUBBER_SPEED_LEVELS, type Scrubber } from "../hooks/useScrubber";
 import StateMessage from "./StateMessage";
 import { useElementWidth } from "../hooks/useElementWidth";
-import { EVENT_FILL, EVENT_LEGEND } from "../lib/eventColor";
+import { EVENT_CATEGORY, EVENT_FILL, EVENT_LEGEND, type EventCategory } from "../lib/eventColor";
+import InstrumentPanel from "./InstrumentPanel";
 
 // Zoom is a multiple of "the whole run fits the visible track", not an
 // absolute pixels-per-second. A fixed scale looked fine on the seeded demo
@@ -54,6 +55,12 @@ interface TimelineProps {
 
 export default function Timeline({ events, scrubber, selected, onSelect }: TimelineProps) {
   const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
+  // Muted rather than removed: hiding events would change the shape of the
+  // run - gaps would close up and the remaining marks would sit at times they
+  // never happened. Dimming keeps the geometry honest while letting one kind
+  // of event stand out, which is the actual question ("where are the retries
+  // in all this?").
+  const [muted, setMuted] = useState<ReadonlySet<EventCategory>>(new Set());
   const { ref: trackRef, width: trackWidth } =
     useElementWidth<HTMLDivElement>(FALLBACK_TRACK_WIDTH);
 
@@ -103,6 +110,18 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
     seekFromPointer(event);
   }
 
+  function toggleCategory(category: EventCategory) {
+    setMuted((current) => {
+      const next = new Set(current);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  }
+
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key === "ArrowRight") {
       event.preventDefault();
@@ -133,18 +152,18 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="rounded border border-border px-2 py-1 font-mono text-xs text-ink-muted hover:text-ink disabled:opacity-40"
+            className="rounded-sm border border-steel-deep px-2.5 py-1.5 font-mono text-base text-steel hover:border-steel-dim hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
             onClick={() => setZoomIndex((i) => Math.max(0, i - 1))}
             disabled={zoomIndex === 0}
           >
             −
           </button>
-          <span className="w-10 text-center font-mono text-xs text-ink-muted">
+          <span className="w-12 text-center font-mono text-base text-ink">
             {ZOOM_LEVELS[zoomIndex]}x
           </span>
           <button
             type="button"
-            className="rounded border border-border px-2 py-1 font-mono text-xs text-ink-muted hover:text-ink disabled:opacity-40"
+            className="rounded-sm border border-steel-deep px-2.5 py-1.5 font-mono text-base text-steel hover:border-steel-dim hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
             onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))}
             disabled={zoomIndex === ZOOM_LEVELS.length - 1}
           >
@@ -155,13 +174,13 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="rounded border border-border px-3 py-1 font-mono text-xs text-ink-muted hover:text-ink"
+            className="rounded-sm border border-steel-deep px-4 py-1.5 font-mono text-base text-signal hover:border-signal"
             onClick={scrubber.togglePlay}
           >
             {scrubber.isPlaying ? "Pause" : "Play"}
           </button>
           <select
-            className="rounded border border-border bg-surface px-1 py-1 font-mono text-xs text-ink-muted hover:text-ink"
+            className="rounded-sm border border-steel-deep bg-glass px-2 py-1.5 font-mono text-base text-ink shadow-glass"
             value={scrubber.speedIndex}
             onChange={(event) => scrubber.setSpeedIndex(Number(event.target.value))}
           >
@@ -171,7 +190,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
               </option>
             ))}
           </select>
-          <span className="font-mono text-xs text-ink-muted">
+          <span className="rounded-sm bg-glass px-2.5 py-1.5 font-mono text-base text-ink shadow-glass">
             {formatElapsed(scrubber.currentMs - startMs)} /{" "}
             {formatElapsed(scrubber.maxMs - startMs)}
           </span>
@@ -180,7 +199,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
 
       <div
         ref={trackRef}
-        className="overflow-x-auto rounded border border-border bg-surface-raised focus:outline focus:outline-1 focus:outline-signal"
+        className="overflow-x-auto rounded-sm border border-steel-deep bg-surface bg-graticule bg-grid-32 shadow-panel focus-visible:outline-none focus-visible:shadow-focus"
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
@@ -196,7 +215,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
             y1={TRACK_HEIGHT / 2}
             x2={totalWidth}
             y2={TRACK_HEIGHT / 2}
-            className="stroke-border"
+            className="stroke-steel-deep"
             strokeWidth={1}
           />
           {ticks.map((x) => (
@@ -209,7 +228,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
                 className="stroke-border"
                 strokeWidth={1}
               />
-              <text x={x + 4} y={TRACK_HEIGHT - 4} className="fill-ink-faint font-mono text-[10px]">
+              <text x={x + 4} y={TRACK_HEIGHT - 4} className="fill-steel font-mono text-[11px]">
                 {formatTick(x / pxPerMs, TICK_SPACING_PX / pxPerMs)}
               </text>
             </g>
@@ -217,6 +236,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
           {items.map((item) => {
             const isSelected = isSameTimelineItem(item, selected);
             const selectionClass = isSelected ? "stroke-ink stroke-2" : "stroke-none";
+            const mutedClass = muted.has(EVENT_CATEGORY[item.type]) ? "opacity-20" : "opacity-100";
             return item.kind === "span" ? (
               <rect
                 key={`span-${item.start.seq}`}
@@ -225,7 +245,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
                 width={Math.max(toX(item.end.timestamp) - toX(item.start.timestamp), 3)}
                 height={16}
                 rx={3}
-                className={`${EVENT_FILL[item.type]} ${selectionClass} cursor-pointer`}
+                className={`${EVENT_FILL[item.type]} ${selectionClass} ${mutedClass} cursor-pointer transition-opacity duration-150`}
                 onPointerDown={() => onSelect(item)}
               >
                 <title>{`${item.type} - seq ${item.start.seq} to ${item.end.seq}`}</title>
@@ -236,7 +256,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
                 cx={toX(item.event.timestamp)}
                 cy={TRACK_HEIGHT / 2}
                 r={5}
-                className={`${EVENT_FILL[item.type]} ${selectionClass} cursor-pointer`}
+                className={`${EVENT_FILL[item.type]} ${selectionClass} ${mutedClass} cursor-pointer transition-opacity duration-150`}
                 onPointerDown={() => onSelect(item)}
               >
                 <title>{`${item.type} - seq ${item.event.seq}`}</title>
@@ -258,17 +278,29 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
         </svg>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-        {EVENT_LEGEND.map((entry) => (
-          <span
-            key={entry.label}
-            className="flex items-center gap-1.5 font-mono text-[10px] text-ink-faint"
-          >
-            <span aria-hidden="true" className={`h-2 w-2 rounded-sm ${entry.className}`} />
-            {entry.label}
-          </span>
-        ))}
+        {EVENT_LEGEND.map((entry) => {
+          const isMuted = muted.has(entry.category);
+          return (
+            <button
+              key={entry.category}
+              type="button"
+              aria-pressed={!isMuted}
+              onClick={() => toggleCategory(entry.category)}
+              title={isMuted ? `Show ${entry.label} events` : `Mute ${entry.label} events`}
+              className={`flex items-center gap-1.5 rounded-sm px-1.5 py-1 font-mono text-sm transition-colors duration-150 ${
+                isMuted ? "text-steel-dim" : "text-steel hover:text-ink"
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`h-2 w-2 rounded-sm ${entry.className} ${isMuted ? "opacity-25" : ""}`}
+              />
+              {entry.label}
+            </button>
+          );
+        })}
       </div>
-      <p className="mt-2 font-mono text-[10px] leading-relaxed text-ink-faint">
+      <p className="mt-2 font-mono text-sm leading-relaxed text-steel">
         Click or drag to seek, or click an event to inspect it. With the track focused: ←/→ steps
         between events, Enter inspects the one under the playhead, space plays.
       </p>

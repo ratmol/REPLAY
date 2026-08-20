@@ -1,14 +1,29 @@
 import { useEffect, useState } from "react";
 import type { EventRecord, RunSummary } from "replay-shared";
 import { fetchEvents, fetchRun } from "../api";
-import { Link } from "../router";
+import { Link, useSearchParam } from "../router";
 import Timeline from "../components/Timeline";
 import EventInspector from "../components/EventInspector";
 import CostPanel from "../components/CostPanel";
 import StateMessage from "../components/StateMessage";
-import { STATUS_COLOR } from "../components/RunRow";
+import Readout, { type ReadoutTone } from "../components/Readout";
+
+// The status hues are already named on the Readout tone scale, so the run
+// header reuses them instead of importing RunRow's text-colour map - one
+// place decides what "failed" looks like.
+const STATUS_TONE: Record<RunSummary["status"], ReadoutTone> = {
+  running: "running",
+  completed: "completed",
+  failed: "failed",
+};
 import { useScrubber } from "../hooks/useScrubber";
-import { isSameTimelineItem, type TimelineItem } from "../lib/pairing";
+import {
+  isSameTimelineItem,
+  itemBySeq,
+  itemStartSeq,
+  pairEvents,
+  type TimelineItem,
+} from "../lib/pairing";
 
 interface RunDetailPageProps {
   runId: string;
@@ -27,12 +42,45 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
   const events = state.kind === "loaded" ? state.events : [];
   const scrubber = useScrubber(events);
   const [selected, setSelected] = useState<TimelineItem | null>(null);
+  const [seqParam, setSeqParam] = useSearchParam("seq");
 
   function handleSelect(item: TimelineItem) {
     // Clicking the already-selected event closes the inspector instead of
     // re-selecting it - the common "toggle" behavior for a detail panel.
-    setSelected((current) => (isSameTimelineItem(current, item) ? null : item));
+    //
+    // Computed from `selected` rather than inside a setSelected updater: an
+    // updater runs during render, and calling the URL setter from in there
+    // updates the router while this component is rendering. React warns about
+    // exactly that, and it is a real hazard rather than a style note - the two
+    // states can be committed out of step.
+    const next = isSameTimelineItem(selected, item) ? null : item;
+    setSelected(next);
+    setSeqParam(next ? String(itemStartSeq(next)) : null);
   }
+
+  function handleClose() {
+    setSelected(null);
+    setSeqParam(null);
+  }
+
+  // Restore a shared ?seq= link once the events for this run have arrived.
+  // Keyed on the parameter and the loaded events rather than run once on
+  // mount, because the URL is readable long before there is anything to
+  // resolve it against. Selecting is skipped when the same item is already
+  // selected, so this never fights handleSelect for control of the panel.
+  useEffect(() => {
+    if (seqParam === null || events.length === 0) {
+      return;
+    }
+    const seq = Number(seqParam);
+    if (!Number.isInteger(seq)) {
+      return;
+    }
+    const item = itemBySeq(pairEvents(events), seq);
+    if (item) {
+      setSelected((current) => (isSameTimelineItem(current, item) ? current : item));
+    }
+  }, [seqParam, events]);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,8 +105,8 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
 
   return (
     <div>
-      <Link to="/" className="text-sm text-ink-muted hover:text-ink">
-        &larr; Runs
+      <Link to="/#runs" className="font-mono text-sm text-steel hover:text-ink">
+        &larr; All runs
       </Link>
 
       {state.kind === "loading" && (
@@ -76,14 +124,24 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
       {state.kind === "loaded" && (
         <div className="mt-4">
           <h2 className="text-headline font-medium text-ink">{state.run.name}</h2>
-          <p className="mt-1 font-mono text-xs text-ink-muted">
-            <span className={`uppercase tracking-wide ${STATUS_COLOR[state.run.status]}`}>
-              {state.run.status}
-            </span>
-            {state.run.model ? ` · ${state.run.model}` : ""}
-            {" · "}
-            {new Date(state.run.startedAt).toLocaleString()}
-          </p>
+          <div className="mt-4 flex flex-wrap items-start gap-x-8 gap-y-4">
+            <Readout label="Status" tone={STATUS_TONE[state.run.status]} size="sm">
+              <span className="uppercase">{state.run.status}</span>
+            </Readout>
+            {state.run.agentName && (
+              <Readout label="Agent" size="sm">
+                {state.run.agentName}
+              </Readout>
+            )}
+            {state.run.model && (
+              <Readout label="Model" size="sm">
+                {state.run.model}
+              </Readout>
+            )}
+            <Readout label="Started" size="sm">
+              {new Date(state.run.startedAt).toLocaleString()}
+            </Readout>
+          </div>
           <div className="mt-6">
             <CostPanel run={state.run} events={state.events} />
           </div>
@@ -98,7 +156,7 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
               />
             </div>
             <div className="mt-4 md:mt-0 md:w-80 md:shrink-0">
-              <EventInspector item={selected} onClose={() => setSelected(null)} />
+              <EventInspector item={selected} onClose={handleClose} />
             </div>
           </div>
         </div>

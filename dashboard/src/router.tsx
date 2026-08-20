@@ -6,16 +6,22 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 
 interface RouterContextValue {
   path: string;
+  search: string;
   navigate: (to: string) => void;
+  setSearchParam: (key: string, value: string | null) => void;
 }
 
 const RouterContext = createContext<RouterContextValue | null>(null);
 
 export function RouterProvider({ children }: { children: ReactNode }) {
   const [path, setPath] = useState(window.location.pathname);
+  const [search, setSearch] = useState(window.location.search);
 
   useEffect(() => {
-    const onPopState = () => setPath(window.location.pathname);
+    const onPopState = () => {
+      setPath(window.location.pathname);
+      setSearch(window.location.search);
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
@@ -23,7 +29,8 @@ export function RouterProvider({ children }: { children: ReactNode }) {
   const navigate = (to: string): void => {
     window.history.pushState(null, "", to);
     const [pathname, hash] = to.split("#");
-    setPath(pathname ?? to);
+    setPath((pathname ?? to).split("?")[0] ?? "/");
+    setSearch(new URL(to, window.location.origin).search);
     // A pushState navigation does not move the viewport, so without this the
     // visitor keeps whatever scroll offset the previous page had - clicking
     // "Runs" from a run detail page left them at the top of the landing page
@@ -41,7 +48,34 @@ export function RouterProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  return <RouterContext.Provider value={{ path, navigate }}>{children}</RouterContext.Provider>;
+  /**
+   * Writes one query parameter without adding a history entry.
+   *
+   * replaceState rather than pushState on purpose: selecting events is
+   * something you do a dozen times while reading a run, and each selection
+   * becoming a back-button stop would make the back button useless for
+   * actually leaving the page. The URL stays shareable either way, which is
+   * the point - a link to a specific event is how you hand a colleague the
+   * exact step that broke.
+   */
+  const setSearchParam = (key: string, value: string | null): void => {
+    const params = new URLSearchParams(window.location.search);
+    if (value === null) {
+      params.delete(key);
+    } else {
+      params.set(key, value);
+    }
+    const nextSearch = params.toString();
+    const url = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}`;
+    window.history.replaceState(null, "", url);
+    setSearch(nextSearch ? `?${nextSearch}` : "");
+  };
+
+  return (
+    <RouterContext.Provider value={{ path, search, navigate, setSearchParam }}>
+      {children}
+    </RouterContext.Provider>
+  );
 }
 
 function useRouter(): RouterContextValue {
@@ -54,6 +88,17 @@ function useRouter(): RouterContextValue {
 
 export function useNavigate(): (to: string) => void {
   return useRouter().navigate;
+}
+
+/**
+ * One query parameter's current value, plus a setter that keeps the URL and
+ * the component in step. Returning a tuple mirrors useState deliberately: at
+ * the call site this is state that happens to live in the address bar.
+ */
+export function useSearchParam(key: string): [string | null, (value: string | null) => void] {
+  const { search, setSearchParam } = useRouter();
+  const value = new URLSearchParams(search).get(key);
+  return [value, (next: string | null) => setSearchParam(key, next)];
 }
 
 export function useCurrentPath(): string {

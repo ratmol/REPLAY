@@ -1,5 +1,8 @@
 import type { EventRecord, RunSummary } from "replay-shared";
 import { buildCostSteps, type CostStep } from "../lib/cost";
+import InstrumentPanel from "./InstrumentPanel";
+import Readout from "./Readout";
+import { EVENT_CATEGORY, EVENT_TEXT } from "../lib/eventColor";
 
 const SPARKLINE_WIDTH = 240;
 const SPARKLINE_HEIGHT = 32;
@@ -29,35 +32,37 @@ export default function CostPanel({ run, events }: CostPanelProps) {
   const steps = buildCostSteps(events, startMs);
 
   return (
-    <div className="rounded border border-border bg-surface-raised p-4">
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <SummaryStat label="total cost" value={formatCost(run.totalCostUsd)} />
-        <SummaryStat label="tokens in" value={formatTokens(run.totalTokensIn)} />
-        <SummaryStat label="tokens out" value={formatTokens(run.totalTokensOut)} />
+    <InstrumentPanel className="p-5 md:p-6">
+      <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
+        <Readout label="Total cost" tone="signal">
+          {formatCost(run.totalCostUsd)}
+        </Readout>
+        <Readout label="Tokens in">{formatTokens(run.totalTokensIn)}</Readout>
+        <Readout label="Tokens out">{formatTokens(run.totalTokensOut)}</Readout>
       </div>
 
       {steps.length === 0 ? (
-        <p className="mt-3 font-mono text-xs text-ink-faint">
+        <p className="mt-4 font-mono text-sm text-steel">
           No per-step cost or token data recorded for this run.
         </p>
       ) : (
         <>
           <div className="mt-4">
-            <p className="mb-1 font-mono text-[10px] uppercase tracking-wide text-ink-faint">
-              cost over time
-            </p>
+            <p className="mb-2 font-mono text-micro uppercase text-steel">Cost over time</p>
             <Sparkline steps={steps} />
           </div>
 
           <div className="mt-4 max-h-40 overflow-auto">
-            <table className="w-full font-mono text-xs">
+            <table className="w-full max-w-xl font-mono text-sm">
               <tbody>
                 {steps.map((step) => (
                   <tr key={step.seq} className="border-t border-border first:border-t-0">
-                    <td className="py-1 pr-3 text-ink-faint">{step.seq}</td>
-                    <td className="py-1 pr-3 text-ink-muted">{step.type}</td>
-                    <td className="py-1 pr-3 text-ink">{formatCost(step.costUsd)}</td>
-                    <td className="py-1 text-ink-faint">
+                    <td className="py-1.5 pr-3 text-steel">{step.seq}</td>
+                    <td className={`py-1.5 pr-3 ${EVENT_TEXT[EVENT_CATEGORY[step.type]]}`}>
+                      {step.type}
+                    </td>
+                    <td className="py-1.5 pr-3 text-ink">{formatCost(step.costUsd)}</td>
+                    <td className="py-1.5 text-steel">
                       {[
                         step.tokensIn !== undefined ? `in ${step.tokensIn}` : null,
                         step.tokensOut !== undefined ? `out ${step.tokensOut}` : null,
@@ -72,16 +77,7 @@ export default function CostPanel({ run, events }: CostPanelProps) {
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-function SummaryStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="font-mono text-[10px] uppercase tracking-wide text-ink-faint">{label}</p>
-      <p className="font-mono text-sm text-ink">{value}</p>
-    </div>
+    </InstrumentPanel>
   );
 }
 

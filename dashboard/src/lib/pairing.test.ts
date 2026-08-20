@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { EventRecord } from "replay-shared";
-import { isSameTimelineItem, itemAtTime, pairEvents } from "./pairing.js";
+import { isSameTimelineItem, itemAtTime, itemBySeq, itemStartSeq, pairEvents } from "./pairing.js";
 
 function event(
   seq: number,
@@ -222,4 +222,30 @@ test("itemAtTime prefers a span over a point that is closer in time", () => {
   ]);
   // 1.2s in: inside the tool span, and 200ms from the agent_decision point.
   assert.equal(itemAtTime(items, BASE_MS + 1200, 500)?.kind, "span");
+});
+
+test("itemBySeq finds a point by its own seq", () => {
+  const items = pairEvents([event(0, "run_start"), event(1, "agent_decision")]);
+  assert.equal(itemStartSeq(itemBySeq(items, 1)!), 1);
+});
+
+test("itemBySeq finds a span from either half of the pair", () => {
+  const items = pairEvents([
+    event(0, "tool_call", { callId: "a" }),
+    event(1, "tool_result", { callId: "a" }),
+  ]);
+  assert.equal(itemBySeq(items, 0)?.kind, "span");
+  assert.equal(itemBySeq(items, 1)?.kind, "span");
+});
+
+test("itemBySeq returns null for a seq that is not in the run", () => {
+  assert.equal(itemBySeq(pairEvents([event(0, "run_start")]), 99), null);
+});
+
+test("itemStartSeq identifies a span by its opening event", () => {
+  const items = pairEvents([
+    event(0, "tool_call", { callId: "a" }),
+    event(1, "tool_result", { callId: "a" }),
+  ]);
+  assert.equal(itemStartSeq(items[0]!), 0);
 });
