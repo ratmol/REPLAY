@@ -1,6 +1,7 @@
 import { useCurrentPath, Link } from "./router";
 import RunsListPage from "./pages/RunsListPage";
 import RunDetailPage from "./pages/RunDetailPage";
+import ShortcutOverlay from "./components/ShortcutOverlay";
 
 const RUN_DETAIL_PATTERN = /^\/runs\/([^/]+)\/?$/;
 
@@ -19,6 +20,7 @@ export default function App() {
         {match ? <RunDetailPage runId={decodeURIComponent(match[1]!)} /> : <RunsListPage />}
       </main>
       <SiteFooter />
+      <ShortcutOverlay />
     </div>
   );
 }
@@ -47,6 +49,9 @@ function SiteHeader({ isLanding }: { isLanding: boolean }) {
               Runs
             </Link>
           )}
+          <span className="hidden font-mono text-micro uppercase text-steel-dim sm:inline">
+            Press ? for keys
+          </span>
           <a
             href="https://github.com/ratmol/REPLAY"
             className="transition-colors hover:text-signal"
