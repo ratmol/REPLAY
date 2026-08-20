@@ -31,7 +31,11 @@ export function buildCostSteps(events: EventRecord[], startMs: number): CostStep
   let cumulative = 0;
   const steps: CostStep[] = [];
   for (const event of sorted) {
-    if (event.costUsd === undefined && event.tokensIn === undefined && event.tokensOut === undefined) {
+    if (
+      event.costUsd === undefined &&
+      event.tokensIn === undefined &&
+      event.tokensOut === undefined
+    ) {
       continue;
     }
     cumulative += event.costUsd ?? 0;
