@@ -40,7 +40,7 @@ interface FlightDeckProps {
 
 export default function FlightDeck({ runId, runName, agentName, model }: FlightDeckProps) {
   const [events, setEvents] = useState<EventRecord[] | null>(null);
-  const { ref, progress } = useScrollProgress<HTMLDivElement>();
+  const { ref, progress, prefersReducedMotion } = useScrollProgress<HTMLDivElement>();
 
   useEffect(() => {
     let cancelled = false;
@@ -72,12 +72,27 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
   const current = sorted[eventIndexAtProgress(sorted, progress)]!;
   const currentPoint = points[eventIndexAtProgress(sorted, progress)];
 
+  // The 260vh scroll-jacking wrapper only exists to give the pinned content
+  // something to scrub against; with motion turned off there is nothing to
+  // pin and no reason to force 160vh of extra scrolling to reach the runs
+  // list. progress stays 0 (see useScrollProgress), so this renders the
+  // flight's start state as a normal, static block instead - not the "final"
+  // state, because HeroCopy's own fade is keyed to progress too, and a
+  // reduced-motion visitor should see the intro copy, not have it hidden.
   return (
-    // 260vh of scroll for ~100vh of pinned content: the extra 160vh is the
-    // flight. Long enough that the aircraft moves at a readable speed, short
-    // enough that nobody feels trapped in the hero.
-    <div ref={ref} className="relative -mt-20 h-[260vh]">
-      <div className="sticky top-0 flex h-screen flex-col justify-between overflow-hidden pb-8 pt-24">
+    <div
+      ref={ref}
+      className={
+        prefersReducedMotion ? "relative -mt-20 pb-8 pt-24" : "relative -mt-20 h-[260vh]"
+      }
+    >
+      <div
+        className={
+          prefersReducedMotion
+            ? "flex flex-col justify-between gap-12"
+            : "sticky top-0 flex h-screen flex-col justify-between overflow-hidden pb-8 pt-24"
+        }
+      >
         <HeroCopy progress={progress} />
         <div>
           <InstrumentStrip
@@ -91,7 +106,11 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
           />
           <Route points={points} progress={progress} />
           <p className="mt-3 text-right font-mono text-micro uppercase text-steel">
-            {progress > 0.02 ? `${Math.round(progress * 100)} percent flown` : "Scroll to fly"}
+            {prefersReducedMotion
+              ? "Open the run to replay it"
+              : progress > 0.02
+                ? `${Math.round(progress * 100)} percent flown`
+                : "Scroll to fly"}
           </p>
         </div>
       </div>
