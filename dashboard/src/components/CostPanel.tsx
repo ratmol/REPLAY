@@ -98,7 +98,7 @@ function Sparkline({ steps }: { steps: CostStep[] }) {
   if (steps.length === 1) {
     return (
       <svg width={SPARKLINE_WIDTH} height={SPARKLINE_HEIGHT} className="block">
-        <circle cx={0} cy={SPARKLINE_HEIGHT} r={3} className="fill-phosphor" />
+        <circle cx={0} cy={SPARKLINE_HEIGHT} r={3} className="fill-signal" />
       </svg>
     );
   }
@@ -113,7 +113,7 @@ function Sparkline({ steps }: { steps: CostStep[] }) {
 
   return (
     <svg width={SPARKLINE_WIDTH} height={SPARKLINE_HEIGHT} className="block">
-      <polyline points={points} fill="none" className="stroke-phosphor" strokeWidth={1.5} />
+      <polyline points={points} fill="none" className="stroke-signal" strokeWidth={1.5} />
     </svg>
   );
 }

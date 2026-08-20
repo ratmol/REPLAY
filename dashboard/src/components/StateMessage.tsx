@@ -32,9 +32,9 @@ export default function StateMessage({ kind, message }: StateMessageProps) {
     <p className="flex items-center gap-2 font-mono text-xs text-ink-muted">
       {message}
       <span className="flex items-center gap-0.5" aria-hidden="true">
-        <span className="h-1 w-1 rounded-full bg-phosphor-dim animate-loading-pulse [animation-delay:0ms]" />
-        <span className="h-1 w-1 rounded-full bg-phosphor-dim animate-loading-pulse [animation-delay:160ms]" />
-        <span className="h-1 w-1 rounded-full bg-phosphor-dim animate-loading-pulse [animation-delay:320ms]" />
+        <span className="h-1 w-1 rounded-full bg-signal-dim animate-loading-pulse [animation-delay:0ms]" />
+        <span className="h-1 w-1 rounded-full bg-signal-dim animate-loading-pulse [animation-delay:160ms]" />
+        <span className="h-1 w-1 rounded-full bg-signal-dim animate-loading-pulse [animation-delay:320ms]" />
       </span>
     </p>
   );

@@ -75,7 +75,7 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
 
       {state.kind === "loaded" && (
         <div className="mt-4">
-          <h2 className="text-ink">{state.run.name}</h2>
+          <h2 className="text-headline font-medium text-ink">{state.run.name}</h2>
           <p className="mt-1 font-mono text-xs text-ink-muted">
             <span className={`uppercase tracking-wide ${STATUS_COLOR[state.run.status]}`}>
               {state.run.status}
@@ -90,7 +90,12 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
 
           <div className="mt-6 md:flex md:items-start md:gap-6">
             <div className="min-w-0 flex-1">
-              <Timeline events={state.events} scrubber={scrubber} selected={selected} onSelect={handleSelect} />
+              <Timeline
+                events={state.events}
+                scrubber={scrubber}
+                selected={selected}
+                onSelect={handleSelect}
+              />
             </div>
             <div className="mt-4 md:mt-0 md:w-80 md:shrink-0">
               <EventInspector item={selected} onClose={() => setSelected(null)} />

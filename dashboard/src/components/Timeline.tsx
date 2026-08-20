@@ -1,26 +1,28 @@
-import { useState, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import type { EventRecord, EventType } from "replay-shared";
-import { isSameTimelineItem, pairEvents, type TimelineItem } from "../lib/pairing";
+import {
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
+import type { EventRecord } from "replay-shared";
+import { isSameTimelineItem, itemAtTime, pairEvents, type TimelineItem } from "../lib/pairing";
 import { SCRUBBER_SPEED_LEVELS, type Scrubber } from "../hooks/useScrubber";
 import StateMessage from "./StateMessage";
+import { useElementWidth } from "../hooks/useElementWidth";
+import { EVENT_FILL, EVENT_LEGEND } from "../lib/eventColor";
 
-const ZOOM_LEVELS = [0.25, 0.5, 1, 2, 4, 8];
-const DEFAULT_ZOOM_INDEX = 2; // 1x
-const BASE_PX_PER_SECOND = 20;
+// Zoom is a multiple of "the whole run fits the visible track", not an
+// absolute pixels-per-second. A fixed scale looked fine on the seeded demo
+// runs and fell apart on real ones: a 500ms run drew as a 10px sliver in a
+// 1000px track at 1x, and a four-minute run needed six clicks to become
+// readable. Relative zoom means 1x is always the useful default, whatever the
+// run's duration.
+const ZOOM_LEVELS = [1, 2, 4, 8, 16, 32];
+const DEFAULT_ZOOM_INDEX = 0; // 1x = fit
+const FALLBACK_TRACK_WIDTH = 800;
+const TRACK_PADDING_PX = 24;
 const TRACK_HEIGHT = 64;
 const TICK_SPACING_PX = 100;
-
-const EVENT_COLOR: Record<EventType, string> = {
-  run_start: "fill-ink-muted",
-  llm_call: "fill-phosphor",
-  llm_response: "fill-phosphor",
-  tool_call: "fill-status-running",
-  tool_result: "fill-status-running",
-  retry: "fill-status-failed",
-  error: "fill-status-failed",
-  agent_decision: "fill-ink-muted",
-  run_end: "fill-ink-muted",
-};
+const SELECT_TOLERANCE_PX = 8;
 
 function formatElapsed(ms: number): string {
   const totalSeconds = ms / 1000;
@@ -32,6 +34,17 @@ function formatElapsed(ms: number): string {
   return `${minutes}m ${seconds}s`;
 }
 
+// Tick labels need as many decimals as the gap between ticks actually
+// resolves. Reusing formatElapsed here printed "0.1s 0.1s 0.2s 0.2s" on a
+// half-second run - a ruler with two identical marks is worse than no ruler.
+function formatTick(ms: number, msPerTick: number): string {
+  if (ms >= 60_000) {
+    return formatElapsed(ms);
+  }
+  const decimals = msPerTick < 100 ? 2 : msPerTick < 1000 ? 1 : 0;
+  return `${(ms / 1000).toFixed(decimals)}s`;
+}
+
 interface TimelineProps {
   events: EventRecord[];
   scrubber: Scrubber;
@@ -41,6 +54,8 @@ interface TimelineProps {
 
 export default function Timeline({ events, scrubber, selected, onSelect }: TimelineProps) {
   const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
+  const { ref: trackRef, width: trackWidth } =
+    useElementWidth<HTMLDivElement>(FALLBACK_TRACK_WIDTH);
 
   if (events.length === 0) {
     return <StateMessage kind="empty" message="No events recorded for this run." />;
@@ -48,11 +63,14 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
 
   const items = pairEvents(events);
   const startMs = new Date(events[0]!.timestamp).getTime();
-  const pxPerMs = (BASE_PX_PER_SECOND * ZOOM_LEVELS[zoomIndex]!) / 1000;
-  const toX = (timestamp: string) => (new Date(timestamp).getTime() - startMs) * pxPerMs;
-
   const lastMs = new Date(events[events.length - 1]!.timestamp).getTime();
-  const totalWidth = Math.max((lastMs - startMs) * pxPerMs + 40, 200);
+  // A run whose events all land in the same millisecond still needs a
+  // non-zero duration, or pxPerMs is Infinity and every x is NaN.
+  const durationMs = Math.max(lastMs - startMs, 1);
+
+  const totalWidth = Math.max(trackWidth - TRACK_PADDING_PX, 200) * ZOOM_LEVELS[zoomIndex]!;
+  const pxPerMs = totalWidth / durationMs;
+  const toX = (timestamp: string) => (new Date(timestamp).getTime() - startMs) * pxPerMs;
   const playheadX = Math.min(totalWidth, Math.max(0, (scrubber.currentMs - startMs) * pxPerMs));
 
   const ticks: number[] = [];
@@ -95,6 +113,17 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
     } else if (event.key === " ") {
       event.preventDefault();
       scrubber.togglePlay();
+    } else if (event.key === "Enter") {
+      // Without this the timeline is mouse-only: arrow keys move the playhead
+      // but nothing can be opened. Enter inspects whatever the playhead is
+      // sitting on. The tolerance is expressed in pixels and converted to a
+      // duration, so "close enough to click" means the same thing at every
+      // zoom level rather than drifting with the time scale.
+      event.preventDefault();
+      const item = itemAtTime(items, scrubber.currentMs, SELECT_TOLERANCE_PX / pxPerMs);
+      if (item) {
+        onSelect(item);
+      }
     }
   }
 
@@ -143,13 +172,15 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
             ))}
           </select>
           <span className="font-mono text-xs text-ink-muted">
-            {formatElapsed(scrubber.currentMs - startMs)} / {formatElapsed(scrubber.maxMs - startMs)}
+            {formatElapsed(scrubber.currentMs - startMs)} /{" "}
+            {formatElapsed(scrubber.maxMs - startMs)}
           </span>
         </div>
       </div>
 
       <div
-        className="overflow-x-auto rounded border border-border bg-surface-raised focus:outline focus:outline-1 focus:outline-phosphor"
+        ref={trackRef}
+        className="overflow-x-auto rounded border border-border bg-surface-raised focus:outline focus:outline-1 focus:outline-signal"
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
@@ -170,9 +201,16 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
           />
           {ticks.map((x) => (
             <g key={x}>
-              <line x1={x} y1={8} x2={x} y2={TRACK_HEIGHT - 8} className="stroke-border" strokeWidth={1} />
+              <line
+                x1={x}
+                y1={8}
+                x2={x}
+                y2={TRACK_HEIGHT - 8}
+                className="stroke-border"
+                strokeWidth={1}
+              />
               <text x={x + 4} y={TRACK_HEIGHT - 4} className="fill-ink-faint font-mono text-[10px]">
-                {formatElapsed(x / pxPerMs)}
+                {formatTick(x / pxPerMs, TICK_SPACING_PX / pxPerMs)}
               </text>
             </g>
           ))}
@@ -187,7 +225,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
                 width={Math.max(toX(item.end.timestamp) - toX(item.start.timestamp), 3)}
                 height={16}
                 rx={3}
-                className={`${EVENT_COLOR[item.type]} ${selectionClass} cursor-pointer`}
+                className={`${EVENT_FILL[item.type]} ${selectionClass} cursor-pointer`}
                 onPointerDown={() => onSelect(item)}
               >
                 <title>{`${item.type} - seq ${item.start.seq} to ${item.end.seq}`}</title>
@@ -198,7 +236,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
                 cx={toX(item.event.timestamp)}
                 cy={TRACK_HEIGHT / 2}
                 r={5}
-                className={`${EVENT_COLOR[item.type]} ${selectionClass} cursor-pointer`}
+                className={`${EVENT_FILL[item.type]} ${selectionClass} cursor-pointer`}
                 onPointerDown={() => onSelect(item)}
               >
                 <title>{`${item.type} - seq ${item.event.seq}`}</title>
@@ -210,18 +248,29 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
             y1={0}
             x2={playheadX}
             y2={TRACK_HEIGHT}
-            className="stroke-phosphor"
+            className="stroke-signal"
             strokeWidth={2}
           />
           <polygon
             points={`${playheadX - 5},0 ${playheadX + 5},0 ${playheadX},7`}
-            className="fill-phosphor"
+            className="fill-signal"
           />
         </svg>
       </div>
-      <p className="mt-1 font-mono text-[10px] text-ink-faint">
-        Click or drag the timeline to seek. Click an event to inspect it. Click the track then use
-        ←/→ to step between events, space to play/pause.
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+        {EVENT_LEGEND.map((entry) => (
+          <span
+            key={entry.label}
+            className="flex items-center gap-1.5 font-mono text-[10px] text-ink-faint"
+          >
+            <span aria-hidden="true" className={`h-2 w-2 rounded-sm ${entry.className}`} />
+            {entry.label}
+          </span>
+        ))}
+      </div>
+      <p className="mt-2 font-mono text-[10px] leading-relaxed text-ink-faint">
+        Click or drag to seek, or click an event to inspect it. With the track focused: ←/→ steps
+        between events, Enter inspects the one under the playhead, space plays.
       </p>
     </div>
   );

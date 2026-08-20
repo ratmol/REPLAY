@@ -4,6 +4,37 @@
 
 @layer base {
   body {
-    @apply bg-surface text-ink font-sans antialiased;
+    @apply bg-surface-deep text-ink font-sans antialiased;
+  }
+
+  /* Atmosphere, not decoration: a single fixed film-grain layer so the dark
+     ground reads as a lit surface instead of flat #000. Generated in CSS
+     (feTurbulence in a data URI) rather than shipping an image - no network
+     request, consistent with the no-webfont rule. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    pointer-events: none;
+    opacity: 0.028;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Keyboard users must always be able to see where they are - the CRT
+     palette is low-contrast enough that the UA default outline disappears. */
+  :focus-visible {
+    @apply outline-none ring-1 ring-signal ring-offset-2 ring-offset-surface-deep;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

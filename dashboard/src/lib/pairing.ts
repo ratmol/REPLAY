@@ -79,3 +79,43 @@ export function pairEvents(events: EventRecord[]): TimelineItem[] {
 
   return items.sort((a, b) => itemSeq(a) - itemSeq(b));
 }
+
+/**
+ * The timeline item under a given wall-clock time, or null if there is none.
+ *
+ * Exists so the timeline can be inspected without a mouse: pressing Enter
+ * selects whatever the playhead is currently sitting on. A span wins whenever
+ * the time falls inside it; otherwise the nearest point within `toleranceMs`
+ * is returned, because a point has no width and landing on its exact
+ * millisecond by keyboard is not realistic.
+ *
+ * Ties go to the lower seq, so repeated presses at the same position are
+ * stable rather than flickering between two events recorded in the same
+ * millisecond.
+ */
+export function itemAtTime(
+  items: TimelineItem[],
+  ms: number,
+  toleranceMs: number,
+): TimelineItem | null {
+  let nearestPoint: TimelineItem | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (const item of items) {
+    if (item.kind === "span") {
+      const startMs = new Date(item.start.timestamp).getTime();
+      const endMs = new Date(item.end.timestamp).getTime();
+      if (ms >= startMs && ms <= endMs) {
+        return item;
+      }
+      continue;
+    }
+    const distance = Math.abs(new Date(item.event.timestamp).getTime() - ms);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestPoint = item;
+    }
+  }
+
+  return nearestDistance <= toleranceMs ? nearestPoint : null;
+}

@@ -1,20 +1,31 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { EventRecord } from "replay-shared";
-import { isSameTimelineItem, pairEvents } from "./pairing.js";
+import { isSameTimelineItem, itemAtTime, pairEvents } from "./pairing.js";
 
-function event(seq: number, type: EventRecord["type"], payload: Record<string, unknown> = {}): EventRecord {
-  return { seq, type, timestamp: `2026-01-01T00:00:${String(seq).padStart(2, "0")}Z`, payload };
+function event(
+  seq: number,
+  type: EventRecord["type"],
+  payload: Record<string, unknown> = {},
+): EventRecord {
+  return {
+    seq,
+    type,
+    timestamp: `2026-01-01T00:00:${String(seq).padStart(2, "0")}Z`,
+    payload,
+  };
 }
 
 test("pairs tool_call/tool_result by callId into a span", () => {
-  const events = [
-    event(0, "tool_call", { callId: "a" }),
-    event(1, "tool_result", { callId: "a" }),
-  ];
+  const events = [event(0, "tool_call", { callId: "a" }), event(1, "tool_result", { callId: "a" })];
   const items = pairEvents(events);
   assert.equal(items.length, 1);
-  assert.deepEqual(items[0], { kind: "span", type: "tool_call", start: events[0], end: events[1] });
+  assert.deepEqual(items[0], {
+    kind: "span",
+    type: "tool_call",
+    start: events[0],
+    end: events[1],
+  });
 });
 
 test("a tool_call with no matching tool_result renders as a point", () => {
@@ -52,23 +63,31 @@ test("handles concurrent, non-adjacent tool calls correctly", () => {
 test("pairs llm_call/llm_response only when directly adjacent", () => {
   const events = [event(0, "llm_call", {}), event(1, "llm_response", {})];
   const items = pairEvents(events);
-  assert.deepEqual(items, [
-    { kind: "span", type: "llm_call", start: events[0], end: events[1] },
-  ]);
+  assert.deepEqual(items, [{ kind: "span", type: "llm_call", start: events[0], end: events[1] }]);
 });
 
 test("an llm_call not immediately followed by llm_response renders as a point", () => {
   const events = [event(0, "llm_call", {}), event(1, "tool_call", { callId: "a" })];
   const items = pairEvents(events);
   const llmItem = items.find((i) => (i.kind === "point" ? i.event.seq === 0 : false));
-  assert.deepEqual(llmItem, { kind: "point", type: "llm_call", event: events[0] });
+  assert.deepEqual(llmItem, {
+    kind: "point",
+    type: "llm_call",
+    event: events[0],
+  });
 });
 
 test("a lone llm_response with no preceding llm_call renders as a point", () => {
   const events = [event(0, "tool_call", { callId: "a" }), event(1, "llm_response", {})];
   const items = pairEvents(events);
-  const responseItem = items.find((i) => (i.kind === "point" ? i.event.type === "llm_response" : false));
-  assert.deepEqual(responseItem, { kind: "point", type: "llm_response", event: events[1] });
+  const responseItem = items.find((i) =>
+    i.kind === "point" ? i.event.type === "llm_response" : false,
+  );
+  assert.deepEqual(responseItem, {
+    kind: "point",
+    type: "llm_response",
+    event: events[1],
+  });
 });
 
 test("run_start, retry, agent_decision, error, and run_end always render as points", () => {
@@ -111,8 +130,17 @@ test("an unrelated event between a tool_call and its result stays its own point"
   ];
   const items = pairEvents(events);
   assert.equal(items.length, 2);
-  assert.deepEqual(items[0], { kind: "span", type: "tool_call", start: events[0], end: events[2] });
-  assert.deepEqual(items[1], { kind: "point", type: "retry", event: events[1] });
+  assert.deepEqual(items[0], {
+    kind: "span",
+    type: "tool_call",
+    start: events[0],
+    end: events[2],
+  });
+  assert.deepEqual(items[1], {
+    kind: "point",
+    type: "retry",
+    event: events[1],
+  });
 });
 
 test("isSameTimelineItem treats two null selections as equal", () => {
@@ -120,15 +148,31 @@ test("isSameTimelineItem treats two null selections as equal", () => {
 });
 
 test("isSameTimelineItem treats null and a selection as different", () => {
-  const point: ReturnType<typeof pairEvents>[number] = { kind: "point", type: "run_start", event: event(0, "run_start") };
+  const point: ReturnType<typeof pairEvents>[number] = {
+    kind: "point",
+    type: "run_start",
+    event: event(0, "run_start"),
+  };
   assert.ok(!isSameTimelineItem(null, point));
   assert.ok(!isSameTimelineItem(point, null));
 });
 
 test("isSameTimelineItem compares points by seq, not object identity", () => {
-  const a = { kind: "point" as const, type: "run_start" as const, event: event(0, "run_start") };
-  const b = { kind: "point" as const, type: "run_start" as const, event: event(0, "run_start") };
-  const c = { kind: "point" as const, type: "run_start" as const, event: event(1, "run_start") };
+  const a = {
+    kind: "point" as const,
+    type: "run_start" as const,
+    event: event(0, "run_start"),
+  };
+  const b = {
+    kind: "point" as const,
+    type: "run_start" as const,
+    event: event(0, "run_start"),
+  };
+  const c = {
+    kind: "point" as const,
+    type: "run_start" as const,
+    event: event(1, "run_start"),
+  };
   assert.ok(isSameTimelineItem(a, b));
   assert.ok(!isSameTimelineItem(a, c));
 });
@@ -140,6 +184,42 @@ test("isSameTimelineItem does not confuse a span with a point sharing its start 
     start: event(0, "tool_call", { callId: "a" }),
     end: event(1, "tool_result", { callId: "a" }),
   };
-  const point = { kind: "point" as const, type: "tool_call" as const, event: event(0, "tool_call", { callId: "a" }) };
+  const point = {
+    kind: "point" as const,
+    type: "tool_call" as const,
+    event: event(0, "tool_call", { callId: "a" }),
+  };
   assert.ok(!isSameTimelineItem(span, point));
+});
+
+// The event() helper above puts event N at second N, so BASE_MS + 500 is
+// half a second past event 0.
+const BASE_MS = new Date("2026-01-01T00:00:00Z").getTime();
+
+test("itemAtTime returns the span the time falls inside", () => {
+  const items = pairEvents([
+    event(0, "tool_call", { callId: "a" }),
+    event(1, "tool_result", { callId: "a" }),
+  ]);
+  assert.equal(itemAtTime(items, BASE_MS + 500, 100)?.kind, "span");
+});
+
+test("itemAtTime falls back to the nearest point inside the tolerance", () => {
+  const items = pairEvents([event(0, "run_start")]);
+  assert.equal(itemAtTime(items, BASE_MS + 80, 100)?.kind, "point");
+});
+
+test("itemAtTime returns null when the nearest point is outside the tolerance", () => {
+  const items = pairEvents([event(0, "run_start")]);
+  assert.equal(itemAtTime(items, BASE_MS + 5000, 100), null);
+});
+
+test("itemAtTime prefers a span over a point that is closer in time", () => {
+  const items = pairEvents([
+    event(0, "tool_call", { callId: "a" }),
+    event(1, "agent_decision"),
+    event(2, "tool_result", { callId: "a" }),
+  ]);
+  // 1.2s in: inside the tool span, and 200ms from the agent_decision point.
+  assert.equal(itemAtTime(items, BASE_MS + 1200, 500)?.kind, "span");
 });

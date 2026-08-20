@@ -22,7 +22,23 @@ export function RouterProvider({ children }: { children: ReactNode }) {
 
   const navigate = (to: string): void => {
     window.history.pushState(null, "", to);
-    setPath(to);
+    const [pathname, hash] = to.split("#");
+    setPath(pathname ?? to);
+    // A pushState navigation does not move the viewport, so without this the
+    // visitor keeps whatever scroll offset the previous page had - clicking
+    // "Runs" from a run detail page left them at the top of the landing page
+    // instead of at the runs list they asked for. The scroll is deferred a
+    // frame because the target section does not exist in the DOM until the
+    // new route has rendered. Back/forward are deliberately not touched, so
+    // the browser can restore their positions itself.
+    requestAnimationFrame(() => {
+      const target = hash ? document.getElementById(hash) : null;
+      if (target) {
+        target.scrollIntoView({ block: "start" });
+      } else {
+        window.scrollTo(0, 0);
+      }
+    });
   };
 
   return <RouterContext.Provider value={{ path, navigate }}>{children}</RouterContext.Provider>;
@@ -60,7 +76,13 @@ export function Link({ to, children, className }: LinkProps) {
         // Let the browser handle new-tab/new-window clicks natively - a
         // router that always intercepts breaks ctrl/cmd-click and
         // middle-click, which a real routing library wouldn't get wrong.
-        if (event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
+        if (
+          event.button !== 0 ||
+          event.metaKey ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.shiftKey
+        ) {
           return;
         }
         event.preventDefault();
