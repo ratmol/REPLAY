@@ -1,6 +1,7 @@
 {
   "name": "replay-dashboard",
   "version": "0.0.1",
+  "license": "MIT",
   "description": "Timeline scrubber UI for replaying agent runs",
   "type": "module",
   "scripts": {

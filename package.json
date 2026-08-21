@@ -2,6 +2,7 @@
   "name": "replay",
   "private": true,
   "version": "0.0.0",
+  "license": "MIT",
   "description": "Flight recorder for AI agents - SDK + collector + dashboard",
   "scripts": {
     "dev:collector": "pnpm --filter replay-collector dev",

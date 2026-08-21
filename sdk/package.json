@@ -1,6 +1,7 @@
 {
   "name": "replay-sdk",
   "version": "0.0.1",
+  "license": "MIT",
   "description": "Drop-in flight recorder for AI agent runs",
   "type": "module",
   "main": "./dist/index.js",

@@ -1,6 +1,7 @@
 {
   "name": "replay-collector",
   "version": "0.0.1",
+  "license": "MIT",
   "description": "Hono + Zod API that validates and stores agent run events in SQLite",
   "type": "module",
   "main": "./dist/index.js",

@@ -2,6 +2,7 @@
   "name": "replay-shared",
   "version": "0.0.1",
   "private": true,
+  "license": "MIT",
   "description": "Zod event schemas and shared types - the contract between SDK, collector, and dashboard",
   "type": "module",
   "main": "./dist/index.js",
