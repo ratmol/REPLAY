@@ -17,6 +17,63 @@ playback), an event inspector, and a cost breakdown.
 
 A recorded walkthrough of the scrubber will be added here.
 
+## How it works
+
+Three pieces and a shared contract:
+
+1. **`replay-sdk`** wraps your agent. You call `startRun`, then `logEvent` at
+   each step (or let the wrapper do it), then `end`. It buffers events in
+   memory and flushes them to the collector in batches over HTTP. If the
+   collector is down it drops the batch rather than throwing - your agent never
+   notices Replay is there.
+2. **`replay-collector`** is a small Hono + Zod service. It validates every
+   batch against the event schema at the edge, writes events to SQLite as an
+   append-only log, and recomputes each run's token and cost totals from that
+   log inside the same transaction as the write.
+3. **`replay-dashboard`** reads runs back over REST and reconstructs the run
+   visually - a timeline you can scrub, an inspector for any single event, and
+   a cost breakdown.
+
+`replay-shared` holds the Zod schemas and types all three agree on, so a
+field-name change is a compile error, not a silent bug.
+
+## What you can do with a recorded run
+
+- **Runs list** - every recorded run with its status, model, duration, and
+  total cost, so you can spot the run that failed or the one that got expensive.
+- **Timeline** - each event placed in time on a hand-built track, with
+  `tool_call`/`tool_result` and `llm_call`/`llm_response` drawn as spans so you
+  can see how long each step actually took.
+- **Scrubber** - drag the playhead, step event-by-event with the arrow keys, or
+  play the run back at adjustable speed, the way you'd review tape.
+- **Event inspector** - click any event to see its full payload formatted, copy
+  it, and tell at a glance when a payload was truncated.
+- **Cost panel** - total spend and token counts for the run, plus a per-step
+  breakdown and a cost-over-time sparkline, so "why did this run cost $3" has an
+  answer.
+
+## What gets recorded
+
+A run is an append-only sequence of typed events. The set is closed at nine
+types for v1 - every step an agent takes maps to one of these:
+
+| Event | What it means |
+|---|---|
+| `run_start` | The run began (agent name, model, metadata) |
+| `llm_call` | A request was sent to a model (messages, tools, temperature) |
+| `llm_response` | The model replied (content, finish reason, tool calls) |
+| `tool_call` | The agent invoked a tool (tool name, args, call id) |
+| `tool_result` | A tool returned (result, and whether it succeeded) |
+| `retry` | An operation was retried (attempt number, which event, why) |
+| `error` | Something failed (message, stack, whether it was fatal) |
+| `agent_decision` | The agent chose a branch (the decision and its reasoning) |
+| `run_end` | The run finished (final status and a summary) |
+
+Each event carries its own token and cost fields where they apply, which is what
+lets the collector derive per-run and per-step cost without a separate metering
+path. Full contract, including payload shapes and truncation rules:
+[`docs/EVENT_SCHEMA.md`](docs/EVENT_SCHEMA.md).
+
 ## Quickstart
 
 ```ts
@@ -99,6 +156,11 @@ pnpm dev:dashboard                  # dashboard on :5173
 none matches your platform it compiles with node-gyp, which on Windows needs
 Visual Studio Build Tools.
 
+A fresh checkout starts with an empty database, so the runs list is empty until
+something records a run. Point the SDK at your running collector using the
+snippet in [Quickstart](#quickstart) - the first `end()` shows up in the
+dashboard immediately, no restart needed.
+
 ## Limitations
 
 - SQLite only, local-first. No hosted or multi-user mode.
@@ -111,3 +173,7 @@ Visual Studio Build Tools.
   at large event counts. Canvas-based rendering is the planned path if that
   turns out to matter.
 - TypeScript only.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE). Self-host it, fork it, run it in your own stack.
