@@ -42,9 +42,11 @@ export const RUN_ROW_DESKTOP_ONLY = "hidden md:block";
 
 interface RunRowProps {
   run: RunSummary;
+  pinned: boolean;
+  onTogglePin: (runId: string) => void;
 }
 
-export default function RunRow({ run }: RunRowProps) {
+export default function RunRow({ run, pinned, onTogglePin }: RunRowProps) {
   return (
     <Link
       to={`/runs/${run.id}`}
@@ -56,6 +58,27 @@ export default function RunRow({ run }: RunRowProps) {
       {/* A transport caret that slides in on hover - the row's "press play"
           affordance, and the only motion in the list. */}
       <span className="flex min-w-0 items-center gap-2 text-ink">
+        <button
+          type="button"
+          aria-pressed={pinned}
+          aria-label={pinned ? `Unpin ${run.name}` : `Pin ${run.name}`}
+          // The row itself is the link (the whole thing navigates on click),
+          // so this nested button must stop the click from reaching it:
+          // preventDefault blocks the anchor's own navigation, stopPropagation
+          // stops it from also reaching Link's own routing handler.
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onTogglePin(run.id);
+          }}
+          className={`shrink-0 font-mono text-sm leading-none transition-colors ${
+            pinned
+              ? "text-signal"
+              : "text-steel-dim opacity-0 group-hover:opacity-100 hover:text-ink"
+          }`}
+        >
+          {pinned ? "★" : "☆"}
+        </button>
         <span
           aria-hidden="true"
           className="-ml-3 text-signal opacity-0 transition-all duration-150 group-hover:ml-0 group-hover:opacity-100"

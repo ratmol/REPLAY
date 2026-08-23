@@ -8,7 +8,14 @@ import SpecSection from "../components/SpecSection";
 import InstrumentPanel from "../components/InstrumentPanel";
 import RunFilterBar from "../components/RunFilterBar";
 import Reveal from "../components/Reveal";
-import { countByStatus, EMPTY_RUN_QUERY, filterAndSortRuns, type RunQuery } from "../lib/runFilter";
+import { usePinnedRuns } from "../hooks/usePinnedRuns";
+import {
+  countByStatus,
+  EMPTY_RUN_QUERY,
+  filterAndSortRuns,
+  partitionPinned,
+  type RunQuery,
+} from "../lib/runFilter";
 
 type LoadState =
   { kind: "loading" } | { kind: "error"; message: string } | { kind: "loaded"; runs: RunSummary[] };
@@ -22,6 +29,7 @@ export default function RunsListPage() {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [query, setQuery] = useState<RunQuery>(EMPTY_RUN_QUERY);
   const [expanded, setExpanded] = useState(false);
+  const { pinnedIds, togglePin } = usePinnedRuns();
 
   useEffect(() => {
     let cancelled = false;
@@ -56,8 +64,15 @@ export default function RunsListPage() {
   // Recomputed on every render rather than memoised: this is a filter over a
   // list that is one page long by construction (the collector caps it), so a
   // useMemo here would cost more in ceremony than it saves in work.
+  //
+  // Pinning partitions *after* sort/filter, not instead of it - a pinned run
+  // still has to match the active filter to show up at all, and this is also
+  // what keeps a pinned run from sliding off the page-8 cut below: the
+  // partition runs before the slice, so pinning is what actually fixes it.
   const visibleRuns =
-    state.kind === "loaded" ? filterAndSortRuns(state.runs, query, Date.now()) : [];
+    state.kind === "loaded"
+      ? partitionPinned(filterAndSortRuns(state.runs, query, Date.now()), pinnedIds)
+      : [];
   // Collapse the tail behind "Show more" only when the list is actually long
   // and not being narrowed by a filter - a filtered result is already a short,
   // deliberate set, and hiding part of it would fight the filter the visitor
@@ -136,7 +151,7 @@ export default function RunsListPage() {
                     <ul className="divide-y divide-border px-5 md:px-6">
                       {shownRuns.map((run) => (
                         <li key={run.id}>
-                          <RunRow run={run} />
+                          <RunRow run={run} pinned={pinnedIds.has(run.id)} onTogglePin={togglePin} />
                         </li>
                       ))}
                     </ul>

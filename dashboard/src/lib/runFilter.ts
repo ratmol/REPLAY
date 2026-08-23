@@ -74,6 +74,27 @@ export function filterAndSortRuns(
   });
 }
 
+/**
+ * Moves pinned runs to the front, preserving order within each group. A
+ * partition rather than a sort key: pinning means "keep this at the top",
+ * not "outrank everything by a new criterion", so pinned runs still follow
+ * whatever sort is active relative to each other, and so do the rest.
+ */
+export function partitionPinned(
+  runs: RunSummary[],
+  pinnedIds: ReadonlySet<string>,
+): RunSummary[] {
+  if (pinnedIds.size === 0) {
+    return runs;
+  }
+  const pinned: RunSummary[] = [];
+  const rest: RunSummary[] = [];
+  for (const run of runs) {
+    (pinnedIds.has(run.id) ? pinned : rest).push(run);
+  }
+  return [...pinned, ...rest];
+}
+
 /** Per-status totals for the filter chips, computed once over the full list. */
 export function countByStatus(runs: RunSummary[]): Record<StatusFilter, number> {
   const counts: Record<StatusFilter, number> = {

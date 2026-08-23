@@ -5,6 +5,7 @@ import {
   countByStatus,
   filterAndSortRuns,
   matchesText,
+  partitionPinned,
   runDurationMs,
   EMPTY_RUN_QUERY,
 } from "./runFilter.js";
@@ -82,6 +83,19 @@ test("filterAndSortRuns does not reorder the array it was given", () => {
     runs.map((r) => r.name),
     ["a", "b"],
   );
+});
+
+test("partitionPinned moves pinned runs to the front without reordering within groups", () => {
+  const runs = [run({ name: "a" }), run({ name: "b" }), run({ name: "c" })];
+  assert.deepEqual(
+    partitionPinned(runs, new Set(["c"])).map((r) => r.name),
+    ["c", "a", "b"],
+  );
+});
+
+test("partitionPinned is a no-op when nothing is pinned", () => {
+  const runs = [run({ name: "a" }), run({ name: "b" })];
+  assert.equal(partitionPinned(runs, new Set()), runs);
 });
 
 test("countByStatus totals each outcome plus an all bucket", () => {
