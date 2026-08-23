@@ -32,10 +32,11 @@ interface RunDetailPageProps {
 type LoadState =
   | { kind: "loading" }
   | { kind: "error"; message: string }
-  | { kind: "loaded"; run: RunSummary; events: EventRecord[] };
+  | { kind: "loaded"; run: RunSummary; events: EventRecord[]; hasMore: boolean };
 
 export default function RunDetailPage({ runId }: RunDetailPageProps) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [lastCheckedAt, setLastCheckedAt] = useState<Date | null>(null);
   // Hooks can't be called conditionally, so this always runs, seeded with an
   // empty array before the real events arrive - useScrubber's own effect
   // resets the playhead once state.events actually changes.
@@ -87,9 +88,10 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
     setState({ kind: "loading" });
     setSelected(null);
     Promise.all([fetchRun(runId), fetchEvents(runId)])
-      .then(([run, events]) => {
+      .then(([run, { events, hasMore }]) => {
         if (!cancelled) {
-          setState({ kind: "loaded", run, events });
+          setState({ kind: "loaded", run, events, hasMore });
+          setLastCheckedAt(new Date());
         }
       })
       .catch((error: unknown) => {
@@ -102,6 +104,23 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
       cancelled = true;
     };
   }, [runId]);
+
+  // A running run's page loads once and then sits there - there is no
+  // websocket or polling loop (live streaming is explicitly a v2 idea, not
+  // this). This is the manual escape hatch: re-fetch on request instead of
+  // silently going stale. Deliberately does not touch `selected` - refreshing
+  // mid-review should not close whatever the visitor is looking at.
+  function checkForUpdates() {
+    Promise.all([fetchRun(runId), fetchEvents(runId)])
+      .then(([run, { events, hasMore }]) => {
+        setState({ kind: "loaded", run, events, hasMore });
+        setLastCheckedAt(new Date());
+      })
+      .catch(() => {
+        // Best-effort: the page already has a run to show, so a failed
+        // refresh just leaves it as-is rather than replacing it with an error.
+      });
+  }
 
   return (
     <div>
@@ -142,9 +161,34 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
               {new Date(state.run.startedAt).toLocaleString()}
             </Readout>
           </div>
+
+          {state.run.status === "running" && (
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={checkForUpdates}
+                className="rounded-sm border border-steel-deep px-2.5 py-1 font-mono text-xs uppercase text-steel transition-colors hover:border-steel-dim hover:text-ink"
+              >
+                Check for updates
+              </button>
+              {lastCheckedAt && (
+                <span className="font-mono text-xs text-steel-dim">
+                  Last checked {lastCheckedAt.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
+          )}
+
           <div className="mt-6">
             <CostPanel run={state.run} events={state.events} />
           </div>
+
+          {state.hasMore && (
+            <p className="mt-4 font-mono text-micro uppercase text-brass">
+              Showing the first {state.events.length} events - this run recorded more than fit on
+              one page.
+            </p>
+          )}
 
           <div className="mt-6 md:flex md:items-start md:gap-6">
             <div className="min-w-0 flex-1">

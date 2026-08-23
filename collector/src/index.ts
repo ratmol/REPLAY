@@ -180,8 +180,13 @@ app.get("/runs/:id/events", (c) => {
     return c.json({ error: "invalid query", issues: parsed.error.issues }, 400);
   }
   const { after, limit } = parsed.data;
-  const events = listEvents(runId, after, limit).map(serializeEvent);
-  return c.json({ events, after, limit }, 200);
+  // Ask the store for one extra row. If it comes back, there was more beyond
+  // this page and the caller can say so - without this, a run with exactly
+  // `limit` events and a run with thousands look identical on the wire.
+  const rows = listEvents(runId, after, limit + 1);
+  const hasMore = rows.length > limit;
+  const events = rows.slice(0, limit).map(serializeEvent);
+  return c.json({ events, after, limit, hasMore }, 200);
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {

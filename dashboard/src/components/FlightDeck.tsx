@@ -45,7 +45,7 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
   useEffect(() => {
     let cancelled = false;
     fetchEvents(runId)
-      .then((fetched) => {
+      .then(({ events: fetched }) => {
         if (!cancelled) {
           setEvents(fetched);
         }

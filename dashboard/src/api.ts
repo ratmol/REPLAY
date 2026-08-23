@@ -32,14 +32,21 @@ export async function fetchRun(runId: string): Promise<RunSummary> {
   return (await response.json()) as RunSummary;
 }
 
-// Fetches a single page (collector default: first 500 events by seq). A run
-// with more events than that only shows the first 500 on the timeline -
-// full cursor-pagination looping is a reasonable v2, not core to "v1".
-export async function fetchEvents(runId: string): Promise<EventRecord[]> {
+export interface EventsPage {
+  events: EventRecord[];
+  // True when the run has more events than this page returned. Full
+  // cursor-pagination looping past the first page is a reasonable v2, not
+  // core to "v1" - but the caller still needs to know the page was cut short
+  // rather than silently rendering a truncated run as if it were complete.
+  hasMore: boolean;
+}
+
+// Fetches a single page (collector default: first 500 events by seq).
+export async function fetchEvents(runId: string): Promise<EventsPage> {
   const response = await fetch(`${API_BASE}/runs/${encodeURIComponent(runId)}/events`);
   if (!response.ok) {
     throw new Error(`GET /runs/${runId}/events failed: ${response.status}`);
   }
-  const body = (await response.json()) as { events: EventRecord[] };
-  return body.events;
+  const body = (await response.json()) as { events: EventRecord[]; hasMore: boolean };
+  return { events: body.events, hasMore: body.hasMore };
 }

@@ -154,7 +154,7 @@ Run in WAL mode with `foreign_keys = ON`.
 | `PATCH` | `/runs/:id` | `{ status, endedAt }` | `{ ok: true }` |
 | `GET` | `/runs` | - | paginated run summaries, newest first |
 | `GET` | `/runs/:id` | - | run + derived totals |
-| `GET` | `/runs/:id/events` | `?after=<seq>&limit=<n>` | events ordered by `seq` |
+| `GET` | `/runs/:id/events` | `?after=<seq>&limit=<n>` | events ordered by `seq`, plus `hasMore` (a row existed past this page) |
 
 **Error contract:** `400` with `{ error, issues }` for Zod failures (pass the
 flattened Zod issues straight through - they are genuinely good error messages).
