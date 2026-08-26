@@ -26,6 +26,7 @@ import {
   type EventRow,
   type RunRow,
 } from "./store.js";
+import { seedSampleRunIfEmpty } from "./seed.js";
 
 const MAX_BATCH_SIZE = 500;
 
@@ -200,6 +201,10 @@ async function readJsonBody(request: Request): Promise<unknown> {
     return undefined;
   }
 }
+
+// Rebuild the sample run before serving, so a hosted read-only instance whose
+// disk was wiped on restart comes back with data. No-op unless SEED_DEMO is set.
+seedSampleRunIfEmpty();
 
 const port = Number(process.env.PORT ?? 4747);
 serve({ fetch: app.fetch, port });
