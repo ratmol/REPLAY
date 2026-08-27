@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: replay-collector
+    runtime: node
+    plan: free
+    buildCommand: pnpm install && pnpm --filter replay-shared build && pnpm --filter replay-collector build
+    startCommand: node collector/dist/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: SEED_DEMO
+        value: "1"
+      # Set by hand once the dashboard has a URL (see DEPLOY_PLAN.md step 4) -
+      # it can't be known at blueprint-apply time, since the dashboard's URL
+      # doesn't exist yet.
+      - key: DASHBOARD_ORIGIN
+        sync: false
