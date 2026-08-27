@@ -9,6 +9,12 @@ services:
     envVars:
       - key: SEED_DEMO
         value: "1"
+      # Pin an LTS Node. Without this Render picks the newest Node (26), which
+      # has no prebuilt better-sqlite3 binary, so it falls back to compiling
+      # from source and fails against Node 26's V8 headers. Node 22 has a
+      # prebuilt, so install downloads it instead of building.
+      - key: NODE_VERSION
+        value: "22.11.0"
       # Set by hand once the dashboard has a URL (see DEPLOY_PLAN.md step 4) -
       # it can't be known at blueprint-apply time, since the dashboard's URL
       # doesn't exist yet.
