@@ -12,9 +12,10 @@ services:
       # Pin an LTS Node. Without this Render picks the newest Node (26), which
       # has no prebuilt better-sqlite3 binary, so it falls back to compiling
       # from source and fails against Node 26's V8 headers. Node 22 has a
-      # prebuilt, so install downloads it instead of building.
+      # prebuilt, so install downloads it instead of building. Must be >= 22.13
+      # because pnpm 11.13 (packageManager) refuses to run on older 22.x.
       - key: NODE_VERSION
-        value: "22.11.0"
+        value: "22.14.0"
       # Set by hand once the dashboard has a URL (see DEPLOY_PLAN.md step 4) -
       # it can't be known at blueprint-apply time, since the dashboard's URL
       # doesn't exist yet.
