@@ -1,113 +1,202 @@
-// Optional sample-run seeding for a hosted, read-only instance.
+// Sample-run seeding for a hosted, read-only instance.
 //
 // Guarded by the SEED_DEMO env var so a local self-host stays empty - the
 // README promises a fresh checkout starts blank, and only the public instance
-// sets the flag. Each sample run is seeded only if its own id is missing, so a
-// host with an ephemeral disk (a free tier that wipes storage on restart)
-// rebuilds whatever it lost on the next boot, a normal restart that kept its
-// data is a no-op, and adding a new sample run here backfills it on the next
-// deploy without wiping the others.
+// sets the flag. Each run is seeded only if its own id is missing, so a host
+// with an ephemeral disk (a free tier that wipes storage on restart) rebuilds
+// whatever it lost on the next boot, a normal restart that kept its data is a
+// no-op, and adding a run here backfills it without wiping the others.
+//
+// The set is generated rather than hand-written: a realistic demo needs enough
+// runs to fill the list, exercise the "show more" cut, and populate all three
+// status buckets (running / completed / failed). Payloads are still real event
+// shapes (tool names, args, results, errors) so every run is worth inspecting.
 
 import type { CreateRunRequest, Event, PatchRunRequest } from "replay-shared";
 import { appendEvents, createRun, getRun, updateRunStatus } from "./store.js";
 
-interface SampleRun {
+interface Built {
   run: CreateRunRequest;
   events: Event[];
-  end: PatchRunRequest;
+  end?: PatchRunRequest; // absent for a run still in flight (stays "running")
 }
 
-// Fixed ids so each sample keeps the same URL across restarts (shareable deep
-// links stay valid). Valid UUID shape because runs.id is a uuid at the edge.
-const BASE = Date.parse("2026-01-15T17:30:00.000Z");
-const iso = (offsetMs: number): string => new Date(BASE + offsetMs).toISOString();
+const NOW = Date.now();
+const MIN = 60_000;
 
-// 1. A clean tool-calling loop that completes. llm_call/llm_response sit
-//    adjacent (they pair on adjacency); the tool_call/tool_result share a
-//    callId (they pair on that), so the timeline draws two spans plus points.
-function weatherRun(): SampleRun {
-  const at = (ms: number): string => iso(ms);
-  return {
-    run: {
-      id: "d3adbeef-0000-4000-8000-000000000001",
-      name: "weather-lookup-agent",
-      agentName: "assistant",
-      model: "claude-sonnet-4-6",
-      startedAt: at(0),
-      metadata: { sample: true, task: "Answer a question that needs a tool call" },
-    },
-    events: [
-      { seq: 0, type: "run_start", timestamp: at(0), payload: { agentName: "assistant", model: "claude-sonnet-4-6" } },
-      { seq: 1, type: "agent_decision", timestamp: at(140), payload: { decision: "call a tool", reasoning: "The question needs live weather data the model doesn't have." } },
-      { seq: 2, type: "llm_call", timestamp: at(180), durationMs: 640, tokensIn: 1240, payload: { model: "claude-sonnet-4-6", messages: [{ role: "user", content: "What's the weather in Toronto right now?" }], tools: ["get_weather"] } },
-      { seq: 3, type: "llm_response", timestamp: at(820), tokensOut: 180, costUsd: 0.0043, payload: { finishReason: "tool_calls", toolCalls: [{ toolName: "get_weather", callId: "call_1" }] } },
-      { seq: 4, type: "tool_call", timestamp: at(860), payload: { toolName: "get_weather", callId: "call_1", args: { city: "Toronto" } } },
-      { seq: 5, type: "tool_result", timestamp: at(1440), durationMs: 560, payload: { toolName: "get_weather", callId: "call_1", ok: true, result: { tempC: 12, condition: "light rain" } } },
-      { seq: 6, type: "llm_call", timestamp: at(1500), durationMs: 520, tokensIn: 1510, payload: { model: "claude-sonnet-4-6", messages: [{ role: "tool", content: '{"tempC":12,"condition":"light rain"}' }] } },
-      { seq: 7, type: "llm_response", timestamp: at(2020), tokensOut: 96, costUsd: 0.0051, payload: { finishReason: "stop", content: "It's 12 degrees and lightly raining in Toronto right now." } },
-      { seq: 8, type: "run_end", timestamp: at(2080), payload: { status: "completed", summary: "Answered with one tool call." } },
-    ],
-    end: { status: "completed", endedAt: at(2080) },
-  };
+// Fixed ids (valid uuid shape) so each run keeps the same URL across restarts.
+const uuid = (i: number): string => `d3adbeef-0000-4000-8000-${String(i + 1).padStart(12, "0")}`;
+
+const NAMES = [
+  "invoice-parser", "weather-lookup", "exchange-rate", "web-scraper", "email-triage",
+  "sql-generator", "pdf-summarizer", "code-reviewer", "ticket-router", "data-enricher",
+  "sentiment-classifier", "doc-qa", "calendar-scheduler", "translation", "log-analyzer",
+  "image-captioner", "product-recommender", "fraud-checker", "resume-screener", "chat-router",
+  "api-orchestrator", "changelog-writer", "meeting-notes", "lead-qualifier", "contract-analyzer",
+  "price-monitor", "news-digest", "bug-triager", "spec-drafter", "csv-cleaner",
+  "address-validator", "tax-estimator", "playlist-curator", "recipe-planner", "seo-auditor",
+  "tweet-composer", "form-filler", "receipt-scanner", "survey-analyzer", "onboarding-guide",
+];
+
+const MODELS = ["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5", "gpt-4o-mini"];
+const TOOLS = ["search", "fetch_url", "query_db", "read_file", "call_api", "get_record", "run_query", "lookup"];
+
+type Kind = "simple" | "tool" | "multitool" | "retry" | "failtool" | "failhallu" | "running";
+
+// Hand-placed so the list interleaves statuses (running: 6, failed: 8, rest
+// completed: 26) rather than clumping them, which is what makes the status
+// filter visibly useful.
+const KINDS: Kind[] = [
+  "tool", "simple", "running", "retry", "failtool", "multitool", "failhallu", "tool", "simple", "running",
+  "retry", "failtool", "tool", "multitool", "simple", "running", "tool", "retry", "simple", "failtool",
+  "multitool", "tool", "running", "simple", "failhallu", "retry", "tool", "multitool", "running", "simple",
+  "tool", "failtool", "retry", "failhallu", "simple", "running", "multitool", "tool", "failhallu", "simple",
+];
+
+function ev(
+  seq: number,
+  type: Event["type"],
+  atMs: number,
+  payload: Record<string, unknown>,
+  extra: Partial<Event> = {},
+): Event {
+  return { seq, type, timestamp: new Date(atMs).toISOString(), payload, ...extra };
 }
 
-// 2. A run that fails on purpose: the tool errors, the agent surfaces a fatal
-//    error, and the run ends "failed". This is what makes the status filter and
-//    the error styling on the timeline worth having.
-function failedRun(): SampleRun {
-  const off = 60_000; // a minute after the weather run, so it sorts distinctly
-  const at = (ms: number): string => iso(off + ms);
-  return {
-    run: {
-      id: "d3adbeef-0000-4000-8000-000000000002",
-      name: "invoice-parser-agent",
-      agentName: "assistant",
-      model: "claude-sonnet-4-6",
-      startedAt: at(0),
-      metadata: { sample: true, task: "Parse an invoice PDF that turns out to be unreadable" },
-    },
-    events: [
-      { seq: 0, type: "run_start", timestamp: at(0), payload: { agentName: "assistant", model: "claude-sonnet-4-6" } },
-      { seq: 1, type: "llm_call", timestamp: at(160), durationMs: 700, tokensIn: 980, payload: { model: "claude-sonnet-4-6", messages: [{ role: "user", content: "Extract the total from invoice.pdf" }], tools: ["read_pdf"] } },
-      { seq: 2, type: "llm_response", timestamp: at(860), tokensOut: 120, costUsd: 0.0038, payload: { finishReason: "tool_calls", toolCalls: [{ toolName: "read_pdf", callId: "call_1" }] } },
-      { seq: 3, type: "tool_call", timestamp: at(900), payload: { toolName: "read_pdf", callId: "call_1", args: { path: "invoice.pdf" } } },
-      { seq: 4, type: "tool_result", timestamp: at(1520), durationMs: 600, payload: { toolName: "read_pdf", callId: "call_1", ok: false, error: "PdfParseError: no extractable text layer (scanned image)" } },
-      { seq: 5, type: "error", timestamp: at(1580), payload: { message: "Tool read_pdf failed and no OCR fallback is configured", fatal: true } },
-      { seq: 6, type: "run_end", timestamp: at(1620), payload: { status: "failed", summary: "Could not read a scanned invoice; aborted." } },
-    ],
-    end: { status: "failed", endedAt: at(1620) },
-  };
+// Builds the events for one run of a given shape. `scale` (deterministic per
+// run) fans out the token counts and cost so the cost panel and the "costliest"
+// sort have a real spread to show.
+function shape(
+  kind: Kind,
+  t0: number,
+  model: string,
+  scale: number,
+  tool: string,
+): { events: Event[]; end?: PatchRunRequest } {
+  const at = (ms: number): number => t0 + ms;
+  const iso = (ms: number): string => new Date(at(ms)).toISOString();
+  const tIn = Math.round(1100 * scale);
+  const tOut = Math.round(150 * scale);
+  const cost = Number((0.006 * scale).toFixed(4));
+  const start = ev(0, "run_start", at(0), { agentName: "assistant", model });
+
+  switch (kind) {
+    case "simple": {
+      const events = [
+        start,
+        ev(1, "llm_call", at(120), { model, messages: [{ role: "user", content: "Answer from what you already know." }] }, { durationMs: 520, tokensIn: tIn }),
+        ev(2, "llm_response", at(660), { finishReason: "stop", content: "Answered directly." }, { tokensOut: tOut, costUsd: cost }),
+        ev(3, "run_end", at(720), { status: "completed", summary: "Answered without tools." }),
+      ];
+      return { events, end: { status: "completed", endedAt: iso(720) } };
+    }
+    case "tool": {
+      const events = [
+        start,
+        ev(1, "agent_decision", at(120), { decision: "call a tool", reasoning: `Needs data from ${tool}.` }),
+        ev(2, "llm_call", at(170), { model, tools: [tool], messages: [{ role: "user", content: "Look this up." }] }, { durationMs: 610, tokensIn: tIn }),
+        ev(3, "llm_response", at(820), { finishReason: "tool_calls", toolCalls: [{ toolName: tool, callId: "call_1" }] }, { tokensOut: Math.round(tOut * 0.6), costUsd: Number((cost * 0.6).toFixed(4)) }),
+        ev(4, "tool_call", at(860), { toolName: tool, callId: "call_1", args: { q: "input" } }),
+        ev(5, "tool_result", at(1420), { toolName: tool, callId: "call_1", ok: true, result: { hit: true } }, { durationMs: 540 }),
+        ev(6, "llm_call", at(1470), { model, messages: [{ role: "tool", content: '{"hit":true}' }] }, { durationMs: 480, tokensIn: Math.round(tIn * 1.2) }),
+        ev(7, "llm_response", at(1980), { finishReason: "stop", content: "Done." }, { tokensOut: Math.round(tOut * 0.5), costUsd: Number((cost * 0.5).toFixed(4)) }),
+        ev(8, "run_end", at(2040), { status: "completed", summary: "One tool call, then answered." }),
+      ];
+      return { events, end: { status: "completed", endedAt: iso(2040) } };
+    }
+    case "multitool": {
+      const t2 = TOOLS[(TOOLS.indexOf(tool) + 3) % TOOLS.length]!;
+      const events = [
+        start,
+        ev(1, "llm_call", at(150), { model, tools: [tool, t2], messages: [{ role: "user", content: "Multi-step task." }] }, { durationMs: 700, tokensIn: tIn }),
+        ev(2, "llm_response", at(900), { finishReason: "tool_calls", toolCalls: [{ toolName: tool, callId: "call_1" }] }, { tokensOut: tOut, costUsd: cost }),
+        ev(3, "tool_call", at(950), { toolName: tool, callId: "call_1", args: { q: "step one" } }),
+        ev(4, "tool_result", at(1560), { toolName: tool, callId: "call_1", ok: true, result: { rows: 12 } }, { durationMs: 600 }),
+        ev(5, "llm_call", at(1620), { model, messages: [{ role: "tool", content: '{"rows":12}' }] }, { durationMs: 640, tokensIn: Math.round(tIn * 1.3) }),
+        ev(6, "llm_response", at(2300), { finishReason: "tool_calls", toolCalls: [{ toolName: t2, callId: "call_2" }] }, { tokensOut: tOut, costUsd: cost }),
+        ev(7, "tool_call", at(2350), { toolName: t2, callId: "call_2", args: { id: 7 } }),
+        ev(8, "tool_result", at(2900), { toolName: t2, callId: "call_2", ok: true, result: { ok: true } }, { durationMs: 520 }),
+        ev(9, "llm_call", at(2960), { model, messages: [{ role: "tool", content: '{"ok":true}' }] }, { durationMs: 500, tokensIn: Math.round(tIn * 1.1) }),
+        ev(10, "llm_response", at(3480), { finishReason: "stop", content: "Synthesized both results." }, { tokensOut: Math.round(tOut * 0.7), costUsd: Number((cost * 0.7).toFixed(4)) }),
+        ev(11, "run_end", at(3540), { status: "completed", summary: "Two tool calls, then synthesized." }),
+      ];
+      return { events, end: { status: "completed", endedAt: iso(3540) } };
+    }
+    case "retry": {
+      const events = [
+        start,
+        ev(1, "llm_call", at(150), { model, tools: [tool], messages: [{ role: "user", content: "Fetch a value." }] }, { durationMs: 600, tokensIn: tIn }),
+        ev(2, "llm_response", at(760), { finishReason: "tool_calls", toolCalls: [{ toolName: tool, callId: "call_1" }] }, { tokensOut: tOut, costUsd: cost }),
+        ev(3, "tool_call", at(800), { toolName: tool, callId: "call_1", args: { q: "x" } }),
+        ev(4, "tool_result", at(1180), { toolName: tool, callId: "call_1", ok: false, error: "HTTP 429 Too Many Requests" }, { durationMs: 360 }),
+        ev(5, "retry", at(1240), { attempt: 1, ofSeq: 3, reason: "rate limited, backing off 500ms" }),
+        ev(6, "tool_call", at(1760), { toolName: tool, callId: "call_2", args: { q: "x" } }),
+        ev(7, "tool_result", at(2140), { toolName: tool, callId: "call_2", ok: true, result: { value: 42 } }, { durationMs: 340 }),
+        ev(8, "llm_call", at(2200), { model, messages: [{ role: "tool", content: '{"value":42}' }] }, { durationMs: 470, tokensIn: Math.round(tIn * 1.1) }),
+        ev(9, "llm_response", at(2680), { finishReason: "stop", content: "Recovered and answered." }, { tokensOut: Math.round(tOut * 0.6), costUsd: Number((cost * 0.6).toFixed(4)) }),
+        ev(10, "run_end", at(2740), { status: "completed", summary: "Recovered from a transient failure." }),
+      ];
+      return { events, end: { status: "completed", endedAt: iso(2740) } };
+    }
+    case "failtool": {
+      const events = [
+        start,
+        ev(1, "llm_call", at(160), { model, tools: [tool], messages: [{ role: "user", content: "Do the thing." }] }, { durationMs: 700, tokensIn: tIn }),
+        ev(2, "llm_response", at(870), { finishReason: "tool_calls", toolCalls: [{ toolName: tool, callId: "call_1" }] }, { tokensOut: tOut, costUsd: cost }),
+        ev(3, "tool_call", at(910), { toolName: tool, callId: "call_1", args: { path: "input.dat" } }),
+        ev(4, "tool_result", at(1520), { toolName: tool, callId: "call_1", ok: false, error: `${tool} failed: upstream returned 500` }, { durationMs: 600 }),
+        ev(5, "error", at(1580), { message: `Tool ${tool} failed and no fallback is configured`, fatal: true }),
+        ev(6, "run_end", at(1620), { status: "failed", summary: "Tool errored; aborted." }),
+      ];
+      return { events, end: { status: "failed", endedAt: iso(1620) } };
+    }
+    case "failhallu": {
+      const events = [
+        start,
+        ev(1, "llm_call", at(150), { model, tools: [tool], messages: [{ role: "user", content: "Handle the request." }] }, { durationMs: 650, tokensIn: tIn }),
+        ev(2, "llm_response", at(800), { finishReason: "tool_calls", toolCalls: [{ toolName: "delete_everything", callId: "call_1" }] }, { tokensOut: tOut, costUsd: cost }),
+        ev(3, "error", at(860), { message: "Model called 'delete_everything', which is not in the declared toolset", fatal: false }),
+        ev(4, "agent_decision", at(920), { decision: "abort", reasoning: "Refusing to run an undeclared tool." }),
+        ev(5, "run_end", at(980), { status: "failed", summary: "Hallucinated a tool outside its toolset; aborted." }),
+      ];
+      return { events, end: { status: "failed", endedAt: iso(980) } };
+    }
+    case "running": {
+      // No run_end and no status patch, so the row stays "running".
+      const events = [
+        start,
+        ev(1, "agent_decision", at(120), { decision: "call a tool", reasoning: `Needs data from ${tool}.` }),
+        ev(2, "llm_call", at(170), { model, tools: [tool], messages: [{ role: "user", content: "In progress." }] }, { durationMs: 620, tokensIn: tIn }),
+        ev(3, "llm_response", at(820), { finishReason: "tool_calls", toolCalls: [{ toolName: tool, callId: "call_1" }] }, { tokensOut: tOut, costUsd: cost }),
+        ev(4, "tool_call", at(860), { toolName: tool, callId: "call_1", args: { q: "pending" } }),
+      ];
+      return { events };
+    }
+  }
 }
 
-// 3. A run that fails once, retries with a fresh callId, and recovers. The
-//    retry event points back at the tool_call it re-attempts (ofSeq), and the
-//    second attempt succeeds - the "transient failure survived" story.
-function retryRun(): SampleRun {
-  const off = 120_000;
-  const at = (ms: number): string => iso(off + ms);
+function build(i: number): Built {
+  const kind = KINDS[i]!;
+  const name = `${NAMES[i]!}-agent`;
+  const model = MODELS[i % MODELS.length]!;
+  const tool = TOOLS[i % TOOLS.length]!;
+  // Deterministic 0.6..1.5 spread so tokens/cost vary run to run.
+  const scale = 0.6 + ((i * 7) % 10) / 10;
+  // Staggered back from now (run 0 most recent), with a little jitter, so the
+  // "newest" sort has a realistic ~1.5 day spread to order.
+  const t0 = NOW - i * 43 * MIN - (i % 5) * 7 * MIN;
+  const { events, end } = shape(kind, t0, model, scale, tool);
   return {
     run: {
-      id: "d3adbeef-0000-4000-8000-000000000003",
-      name: "exchange-rate-agent",
+      id: uuid(i),
+      name,
       agentName: "assistant",
-      model: "claude-sonnet-4-6",
-      startedAt: at(0),
-      metadata: { sample: true, task: "Fetch a rate from an API that rate-limits the first call" },
+      model,
+      startedAt: new Date(t0).toISOString(),
+      metadata: { sample: true },
     },
-    events: [
-      { seq: 0, type: "run_start", timestamp: at(0), payload: { agentName: "assistant", model: "claude-sonnet-4-6" } },
-      { seq: 1, type: "llm_call", timestamp: at(150), durationMs: 610, tokensIn: 1020, payload: { model: "claude-sonnet-4-6", messages: [{ role: "user", content: "What's 100 USD in CAD?" }], tools: ["get_rate"] } },
-      { seq: 2, type: "llm_response", timestamp: at(760), tokensOut: 88, costUsd: 0.0036, payload: { finishReason: "tool_calls", toolCalls: [{ toolName: "get_rate", callId: "call_1" }] } },
-      { seq: 3, type: "tool_call", timestamp: at(800), payload: { toolName: "get_rate", callId: "call_1", args: { from: "USD", to: "CAD" } } },
-      { seq: 4, type: "tool_result", timestamp: at(1180), durationMs: 360, payload: { toolName: "get_rate", callId: "call_1", ok: false, error: "HTTP 429 Too Many Requests" } },
-      { seq: 5, type: "retry", timestamp: at(1240), payload: { attempt: 1, ofSeq: 3, reason: "rate limited, backing off 500ms" } },
-      { seq: 6, type: "tool_call", timestamp: at(1760), payload: { toolName: "get_rate", callId: "call_2", args: { from: "USD", to: "CAD" } } },
-      { seq: 7, type: "tool_result", timestamp: at(2140), durationMs: 340, payload: { toolName: "get_rate", callId: "call_2", ok: true, result: { rate: 1.37 } } },
-      { seq: 8, type: "llm_call", timestamp: at(2200), durationMs: 480, tokensIn: 1180, payload: { model: "claude-sonnet-4-6", messages: [{ role: "tool", content: '{"rate":1.37}' }] } },
-      { seq: 9, type: "llm_response", timestamp: at(2680), tokensOut: 72, costUsd: 0.0041, payload: { finishReason: "stop", content: "100 USD is about 137 CAD." } },
-      { seq: 10, type: "run_end", timestamp: at(2740), payload: { status: "completed", summary: "Recovered from a rate limit on the second attempt." } },
-    ],
-    end: { status: "completed", endedAt: at(2740) },
+    events,
+    end,
   };
 }
 
@@ -120,17 +209,24 @@ export function seedSampleRunsIfMissing(): void {
   if (!process.env.SEED_DEMO) {
     return;
   }
-  for (const sample of [weatherRun(), failedRun(), retryRun()]) {
+  let seeded = 0;
+  for (let i = 0; i < KINDS.length; i += 1) {
+    const { run, events, end } = build(i);
     try {
-      if (getRun(sample.run.id)) {
+      if (getRun(run.id)) {
         continue;
       }
-      createRun(sample.run);
-      appendEvents(sample.run.id, sample.events);
-      updateRunStatus(sample.run.id, sample.end);
-      console.log(`seeded sample run ${sample.run.id} (${sample.run.name})`);
+      createRun(run);
+      appendEvents(run.id, events);
+      if (end) {
+        updateRunStatus(run.id, end);
+      }
+      seeded += 1;
     } catch (err) {
-      console.error(`sample run seed failed for ${sample.run.name}:`, err);
+      console.error(`sample run seed failed for ${run.name}:`, err);
     }
+  }
+  if (seeded > 0) {
+    console.log(`seeded ${seeded} sample runs`);
   }
 }
