@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { EventRecord } from "replay-shared";
 import { fetchEvents } from "../api";
 import { EVENT_FILL } from "../lib/eventColor";
-import { altitudeAtX, buildFlightPath } from "../lib/flightPath";
+import { altitudeAtX, buildFlightPath, groundY } from "../lib/flightPath";
 import { eventIndexAtProgress, timecode } from "../lib/scrollTape";
 import { useScrollProgress } from "../hooks/useScrollProgress";
 import { Link } from "../router";
@@ -82,9 +82,7 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
   return (
     <div
       ref={ref}
-      className={
-        prefersReducedMotion ? "relative -mt-20 pb-8 pt-24" : "relative -mt-20 h-[260vh]"
-      }
+      className={prefersReducedMotion ? "relative -mt-20 pb-8 pt-24" : "relative -mt-20 h-[260vh]"}
     >
       <div
         className={
@@ -211,6 +209,13 @@ function Plate({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+const GROUND_Y = groundY(ROUTE_HEIGHT);
+// Half-window (in world px) used to read the local slope of the route for the
+// aircraft's pitch. Big enough to smooth over a single steep segment, small
+// enough that the nose still visibly drops on final approach.
+const PITCH_SAMPLE_DX = 30;
+const MAX_PITCH_DEG = 24;
+
 function Route({
   points,
   progress,
@@ -220,10 +225,23 @@ function Route({
 }) {
   const aircraftX = progress * ROUTE_WIDTH;
   const aircraftY = altitudeAtX(points, aircraftX);
+  const origin = points[0]!;
+  const destination = points[points.length - 1]!;
+  const landed = aircraftX >= destination.x - 1;
+
   const flown = points.filter((point) => point.x <= aircraftX);
   // The flown segment ends exactly under the aircraft rather than at the last
   // waypoint behind it, so the trail never visibly lags the nose.
   const trail = [...flown.map((point) => `${point.x},${point.y}`), `${aircraftX},${aircraftY}`];
+
+  // Pitch = the slope of the route right under the nose. y grows downward, so a
+  // climb (y falling) gives a negative angle = nose up, and the descent onto
+  // the destination runway gives nose down - the aircraft visibly flares in to
+  // land. Clamped so a near-vertical segment can't spin it.
+  const behind = altitudeAtX(points, aircraftX - PITCH_SAMPLE_DX);
+  const ahead = altitudeAtX(points, aircraftX + PITCH_SAMPLE_DX);
+  const rawPitch = (Math.atan2(ahead - behind, PITCH_SAMPLE_DX * 2) * 180) / Math.PI;
+  const pitch = Math.max(-MAX_PITCH_DEG, Math.min(MAX_PITCH_DEG, rawPitch));
 
   return (
     <div className="relative overflow-hidden border-y border-steel-deep bg-surface bg-graticule bg-grid-32">
@@ -237,13 +255,26 @@ function Route({
           viewBox={`0 0 ${ROUTE_WIDTH} ${ROUTE_HEIGHT}`}
           aria-hidden="true"
         >
+          {/* The runway both airports sit on - the reference the altitude is
+              measured against. */}
+          <line
+            x1={0}
+            y1={GROUND_Y}
+            x2={ROUTE_WIDTH}
+            y2={GROUND_Y}
+            className="stroke-steel-deep"
+            strokeWidth={1}
+          />
+          <Airport x={origin.x} label="DEP" side="right" />
+          <Airport x={destination.x} label="ARR" side="left" />
+
           {points.map((point) => (
             <line
               key={`drop-${point.seq}`}
               x1={point.x}
               y1={point.y}
               x2={point.x}
-              y2={ROUTE_HEIGHT}
+              y2={GROUND_Y}
               className="stroke-border"
               strokeWidth={1}
             />
@@ -274,16 +305,45 @@ function Route({
 
       {/* The aircraft holds the centre of the frame and rides the profile
           vertically. It lives outside the sliding group because its x is fixed
-          in screen space while the world scrolls beneath it. */}
+          in screen space while the world scrolls beneath it. The inner element
+          rotates it to the route's pitch; on the ground it levels off. */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute left-1/2 top-0 will-change-transform"
-        style={{ transform: `translate(-50%, ${aircraftY}px)` }}
+        style={{ transform: `translateY(${aircraftY}px)` }}
       >
-        <Aircraft />
+        <div style={{ transform: `translate(-50%, -50%) rotate(${landed ? 0 : pitch}deg)` }}>
+          <Aircraft />
+        </div>
       </div>
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-fade-x-surface" />
     </div>
+  );
+}
+
+// A control tower on the runway, marking where the run departs and arrives.
+// `side` puts the label clear of the flight path: the origin's label to its
+// right (into the run), the destination's to its left.
+function Airport({ x, label, side }: { x: number; label: string; side: "left" | "right" }) {
+  const mastTop = GROUND_Y - 20;
+  return (
+    <g>
+      <line x1={x} y1={GROUND_Y} x2={x} y2={mastTop} className="stroke-steel" strokeWidth={1.5} />
+      <path
+        d={`M${x - 4} ${mastTop} L${x + 4} ${mastTop} L${x + 2.5} ${mastTop - 6} L${x - 2.5} ${mastTop - 6} Z`}
+        className="fill-steel"
+      />
+      <rect x={x - 9} y={GROUND_Y} width={18} height={2.5} className="fill-steel-dim" />
+      <text
+        x={side === "right" ? x + 10 : x - 10}
+        y={GROUND_Y - 6}
+        textAnchor={side === "right" ? "start" : "end"}
+        className="fill-steel font-mono"
+        style={{ fontSize: 11, letterSpacing: "0.14em" }}
+      >
+        {label}
+      </text>
+    </g>
   );
 }
 
@@ -292,7 +352,7 @@ function Route({
 // illustration.
 function Aircraft() {
   return (
-    <svg width={40} height={22} viewBox="0 0 40 22" className="-translate-y-1/2">
+    <svg width={40} height={22} viewBox="0 0 40 22">
       <path
         d="M2 11 L20 8 L34 8 L38 11 L34 14 L20 14 Z M14 8 L8 1 L12 1 L22 8 Z M14 14 L8 21 L12 21 L22 14 Z"
         className="fill-signal"

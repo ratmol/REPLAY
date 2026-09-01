@@ -1,8 +1,15 @@
 // Turns a run into a flight profile: time on the x axis, money spent on the y
 // axis. Cost is monotonically non-decreasing, so a run that spends tokens
-// literally climbs, and one that stalls without spending cruises flat. The
-// altitude is a real quantity read off the events, not decoration - that is
-// the only reason the aviation metaphor is allowed to exist here.
+// literally climbs. The altitude is a real quantity read off the events, not
+// decoration - that is the only reason the aviation metaphor is allowed to
+// exist here.
+//
+// The run is a flight from one airport to another: the first event sits on the
+// ground at the origin (nothing has been spent yet, so climb is zero anyway),
+// and the final event is forced back down to the ground at the destination, so
+// the profile reads as takeoff -> climb -> descent -> landing rather than a
+// climb that flies off the top of the frame and never returns. Every event
+// between the two keeps altitude = cumulative cost.
 //
 // Pure and tested for the same reason pairing.ts and cost.ts are: the
 // component only feeds these numbers to an SVG, but interpolating an altitude
@@ -20,16 +27,23 @@ export interface FlightPoint {
 }
 
 // Keeps the profile off the top and bottom edges of its box, so the aircraft
-// glyph and the waypoint marks are never clipped in half.
+// glyph and the waypoint marks are never clipped in half. FLOOR_FRACTION is
+// the runway: both airports and the landing touchdown sit on it.
 const CEILING_FRACTION = 0.18;
 const FLOOR_FRACTION = 0.82;
 
+/** The runway line, in SVG user units - where the aircraft takes off and lands. */
+export function groundY(height: number): number {
+  return height * FLOOR_FRACTION;
+}
+
 /**
  * Every event placed at its time (x) and its cumulative cost (y), in SVG user
- * units. Events are returned in seq order.
+ * units. Events are returned in seq order. The final event lands on the ground
+ * (see the module comment) so the run touches down at a destination.
  *
  * A run that spent nothing - or a run whose events all share one timestamp -
- * gets a flat cruise rather than a divide-by-zero: there is no altitude to
+ * taxis along the ground rather than dividing by zero: there is no altitude to
  * show, but there is still a run to draw.
  */
 export function buildFlightPath(
@@ -48,17 +62,22 @@ export function buildFlightPath(
   const totalCost = sorted.reduce((sum, event) => sum + (event.costUsd ?? 0), 0);
 
   const ceiling = height * CEILING_FRACTION;
-  const floor = height * FLOOR_FRACTION;
+  const floor = groundY(height);
+  const lastIndex = sorted.length - 1;
 
   let cumulative = 0;
-  return sorted.map((event) => {
+  return sorted.map((event, index) => {
     cumulative += event.costUsd ?? 0;
     const climb = totalCost > 0 ? cumulative / totalCost : 0;
+    // The last event is the landing: it touches the runway regardless of what
+    // it cost, so the flight ends at the destination airport. cumulativeCostUsd
+    // still carries the true running total - only the drawn altitude lands.
+    const y = index === lastIndex ? floor : floor - climb * (floor - ceiling);
     return {
       seq: event.seq,
       type: event.type,
       x: ((new Date(event.timestamp).getTime() - startMs) / durationMs) * width,
-      y: floor - climb * (floor - ceiling),
+      y,
       cumulativeCostUsd: cumulative,
     };
   });
