@@ -31,6 +31,10 @@ import { EVENT_CATEGORY, EVENT_TEXT } from "../lib/eventColor";
 const ROUTE_WIDTH = 2600;
 const ROUTE_HEIGHT = 150;
 
+// The public repo, same target as the nav's Source link. A visitor evaluating a
+// dev tool wants the code within reach of the first screen, not only the nav.
+const SOURCE_URL = "https://github.com/ratmol/REPLAY";
+
 interface FlightDeckProps {
   runId: string;
   runName: string;
@@ -91,7 +95,7 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
             : "sticky top-0 flex h-screen flex-col justify-between overflow-hidden pb-8 pt-24"
         }
       >
-        <HeroCopy progress={progress} />
+        <HeroCopy progress={progress} runId={runId} />
         <div>
           <InstrumentStrip
             runId={runId}
@@ -108,7 +112,7 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
               ? "Open the run to replay it"
               : progress > 0.02
                 ? `${Math.round(progress * 100)} percent flown`
-                : "Scroll to fly"}
+                : "Scroll to fly it, or open a run below"}
           </p>
         </div>
       </div>
@@ -116,7 +120,7 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
   );
 }
 
-function HeroCopy({ progress }: { progress: number }) {
+function HeroCopy({ progress, runId }: { progress: number; runId: string }) {
   // The headline hands off to the flight as you scroll - one continuous move
   // rather than two focal points competing. It fully clears out (opacity 0,
   // lifted away) instead of lingering half-faded, which read as "stuck": the
@@ -146,6 +150,41 @@ function HeroCopy({ progress }: { progress: number }) {
       <p className="mt-6 max-w-md text-lg leading-relaxed text-ink-muted">
         Your agent looped, burned three dollars, and failed a tool call somewhere. Console logs will
         not tell you where. Replay records every step and lets you scrub through it.
+      </p>
+      {/* The three verbs, plainly - a first-time visitor gets the shape of the
+          tool before deciding whether the flight animation is worth their
+          scroll. */}
+      <p className="mt-6 font-mono text-sm text-steel">
+        Record every step &middot; replay it on a timeline &middot; see what each step cost.
+      </p>
+      {/* Real next steps. The primary one opens an actual run's scrubber rather
+          than only scrolling the hero, so the first interaction is using the
+          product; the mono line answers the "is this real / can I run it"
+          question a developer asks before investing any scroll. */}
+      <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-3">
+        <Link
+          to={`/runs/${runId}`}
+          className="inline-flex items-center gap-2 border border-signal/70 px-4 py-2 font-mono text-sm text-signal transition-colors hover:bg-signal hover:text-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
+        >
+          Open a live run <span aria-hidden="true">&rarr;</span>
+        </Link>
+        <a
+          href="#spec"
+          className="px-2 py-2 font-mono text-sm text-ink-muted transition-colors hover:text-ink"
+        >
+          Quickstart
+        </a>
+        <a
+          href={SOURCE_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="px-2 py-2 font-mono text-sm text-ink-muted transition-colors hover:text-ink"
+        >
+          Source <span aria-hidden="true">&#8599;</span>
+        </a>
+      </div>
+      <p className="mt-4 font-mono text-micro uppercase text-steel">
+        Open source &middot; self-hosted &middot; zero-dependency TypeScript SDK
       </p>
     </header>
   );
