@@ -115,8 +115,12 @@ export default {
       fontSize: {
         // Fluid display scale. The brief is oversized type, and clamp() means
         // the hero headline is genuinely huge on a laptop and still fits a
-        // 360px phone without a media query per breakpoint.
-        display: ["clamp(2.5rem, 8vw, 6.25rem)", { lineHeight: "0.92", letterSpacing: "-0.04em" }],
+        // 360px phone without a media query per breakpoint. Capped at 5rem
+        // rather than 6.25: the pinned hero has to hold the headline *and* the
+        // flight route in one viewport, and at 6.25rem on a laptop the two-line
+        // headline alone ate ~184px, which pushed the route off the bottom of
+        // the frame. The flight is the signature here, so the type yields to it.
+        display: ["clamp(2.5rem, 6.5vw, 5rem)", { lineHeight: "0.92", letterSpacing: "-0.04em" }],
         headline: [
           "clamp(1.75rem, 4.5vw, 3.25rem)",
           { lineHeight: "1.02", letterSpacing: "-0.03em" },

@@ -31,10 +31,6 @@ import { EVENT_CATEGORY, EVENT_TEXT } from "../lib/eventColor";
 const ROUTE_WIDTH = 2600;
 const ROUTE_HEIGHT = 150;
 
-// The public repo, same target as the nav's Source link. A visitor evaluating a
-// dev tool wants the code within reach of the first screen, not only the nav.
-const SOURCE_URL = "https://github.com/ratmol/REPLAY";
-
 interface FlightDeckProps {
   runId: string;
   runName: string;
@@ -92,7 +88,7 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
         className={
           prefersReducedMotion
             ? "flex flex-col justify-between gap-12"
-            : "sticky top-0 flex h-screen flex-col justify-between overflow-hidden pb-8 pt-24"
+            : "sticky top-0 flex h-screen flex-col justify-between overflow-hidden pb-8 pt-20"
         }
       >
         <HeroCopy progress={progress} runId={runId} />
@@ -142,26 +138,23 @@ function HeroCopy({ progress, runId }: { progress: number; runId: string }) {
       }}
     >
       <p className="font-mono text-micro uppercase text-brass">Flight recorder for AI agents</p>
-      <h1 className="mt-5 text-display font-medium text-ink">
+      <h1 className="mt-4 text-display font-medium text-ink">
         Play the run
         <br />
         back.
       </h1>
-      <p className="mt-6 max-w-md text-lg leading-relaxed text-ink-muted">
-        Your agent looped, burned three dollars, and failed a tool call somewhere. Console logs will
-        not tell you where. Replay records every step and lets you scrub through it.
+      <p className="mt-5 max-w-md text-lg leading-relaxed text-ink-muted">
+        Your agent looped, burned dollars, and failed a tool call somewhere. Console logs will not
+        tell you where. Replay records every step and lets you scrub through it.
       </p>
-      {/* The three verbs, plainly - a first-time visitor gets the shape of the
-          tool before deciding whether the flight animation is worth their
-          scroll. */}
-      <p className="mt-6 font-mono text-sm text-steel">
-        Record every step &middot; replay it on a timeline &middot; see what each step cost.
-      </p>
-      {/* Real next steps. The primary one opens an actual run's scrubber rather
-          than only scrolling the hero, so the first interaction is using the
-          product; the mono line answers the "is this real / can I run it"
-          question a developer asks before investing any scroll. */}
-      <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-3">
+      {/* One real way in, on the first screen. The primary link opens an actual
+          run's scrubber rather than only scrolling the hero, so the first
+          interaction is using the product. Kept to a single compact row - an
+          earlier pass stacked three extra descriptive lines here, which grew
+          the header past the pinned viewport and clipped the flight route off
+          the bottom of the frame. Source lives in the top nav, so it is not
+          repeated here. */}
+      <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-3">
         <Link
           to={`/runs/${runId}`}
           className="inline-flex items-center gap-2 border border-signal/70 px-4 py-2 font-mono text-sm text-signal transition-colors hover:bg-signal hover:text-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
@@ -174,18 +167,7 @@ function HeroCopy({ progress, runId }: { progress: number; runId: string }) {
         >
           Quickstart
         </a>
-        <a
-          href={SOURCE_URL}
-          target="_blank"
-          rel="noreferrer"
-          className="px-2 py-2 font-mono text-sm text-ink-muted transition-colors hover:text-ink"
-        >
-          Source <span aria-hidden="true">&#8599;</span>
-        </a>
       </div>
-      <p className="mt-4 font-mono text-micro uppercase text-steel">
-        Open source &middot; self-hosted &middot; zero-dependency TypeScript SDK
-      </p>
     </header>
   );
 }
@@ -264,7 +246,6 @@ function Route({
 }) {
   const aircraftX = progress * ROUTE_WIDTH;
   const aircraftY = altitudeAtX(points, aircraftX);
-  const origin = points[0]!;
   const destination = points[points.length - 1]!;
   const landed = aircraftX >= destination.x - 1;
 
@@ -282,6 +263,68 @@ function Route({
   const rawPitch = (Math.atan2(ahead - behind, PITCH_SAMPLE_DX * 2) * 180) / Math.PI;
   const pitch = Math.max(-MAX_PITCH_DEG, Math.min(MAX_PITCH_DEG, rawPitch));
 
+  // Everything that depends only on the route - the runway, both airports, the
+  // per-event drop lines, the base profile and the waypoints - is memoised so a
+  // scroll frame doesn't rebuild it. Scrolling changes only `progress`, and the
+  // only things that actually move with it are the signal-coloured trail and
+  // the aircraft; without this, every frame re-created ~40 SVG nodes just to
+  // hand React back an identical tree to diff.
+  const routeBackdrop = useMemo(() => {
+    const origin = points[0]!;
+    const dest = points[points.length - 1]!;
+    return (
+      <>
+        {/* The runway both airports sit on - the reference the altitude is
+            measured against. */}
+        <line
+          x1={0}
+          y1={GROUND_Y}
+          x2={ROUTE_WIDTH}
+          y2={GROUND_Y}
+          className="stroke-steel-deep"
+          strokeWidth={1}
+        />
+        <Airport x={origin.x} label="DEP" side="right" />
+        <Airport x={dest.x} label="ARR" side="left" />
+
+        {points.map((point) => (
+          <line
+            key={`drop-${point.seq}`}
+            x1={point.x}
+            y1={point.y}
+            x2={point.x}
+            y2={GROUND_Y}
+            className="stroke-border"
+            strokeWidth={1}
+          />
+        ))}
+        <polyline
+          points={points.map((point) => `${point.x},${point.y}`).join(" ")}
+          fill="none"
+          className="stroke-steel-dim"
+          strokeWidth={1.5}
+        />
+      </>
+    );
+  }, [points]);
+
+  // The waypoint dots are static too, but they draw *after* the trail so an
+  // event mark is never painted over by the signal line crossing it - the same
+  // z-order the un-memoised version had.
+  const waypointDots = useMemo(
+    () =>
+      points.map((point) => (
+        <circle
+          key={`waypoint-${point.seq}`}
+          cx={point.x}
+          cy={point.y}
+          r={4}
+          className={EVENT_FILL[point.type]}
+        />
+      )),
+    [points],
+  );
+
   return (
     <div className="relative overflow-hidden border-y border-steel-deep bg-surface bg-graticule bg-grid-32">
       <div
@@ -294,51 +337,16 @@ function Route({
           viewBox={`0 0 ${ROUTE_WIDTH} ${ROUTE_HEIGHT}`}
           aria-hidden="true"
         >
-          {/* The runway both airports sit on - the reference the altitude is
-              measured against. */}
-          <line
-            x1={0}
-            y1={GROUND_Y}
-            x2={ROUTE_WIDTH}
-            y2={GROUND_Y}
-            className="stroke-steel-deep"
-            strokeWidth={1}
-          />
-          <Airport x={origin.x} label="DEP" side="right" />
-          <Airport x={destination.x} label="ARR" side="left" />
-
-          {points.map((point) => (
-            <line
-              key={`drop-${point.seq}`}
-              x1={point.x}
-              y1={point.y}
-              x2={point.x}
-              y2={GROUND_Y}
-              className="stroke-border"
-              strokeWidth={1}
-            />
-          ))}
-          <polyline
-            points={points.map((point) => `${point.x},${point.y}`).join(" ")}
-            fill="none"
-            className="stroke-steel-dim"
-            strokeWidth={1.5}
-          />
+          {routeBackdrop}
+          {/* The one geometry that changes per frame: the flown trail, drawn on
+              top of the memoised backdrop and under the waypoint dots. */}
           <polyline
             points={trail.join(" ")}
             fill="none"
             className="stroke-signal"
             strokeWidth={2}
           />
-          {points.map((point) => (
-            <circle
-              key={`waypoint-${point.seq}`}
-              cx={point.x}
-              cy={point.y}
-              r={4}
-              className={EVENT_FILL[point.type]}
-            />
-          ))}
+          {waypointDots}
         </svg>
       </div>
 
