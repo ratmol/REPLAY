@@ -323,6 +323,8 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
         ref={trackRef}
         className="overflow-x-auto rounded-sm border border-steel-deep bg-surface bg-graticule bg-grid-32 shadow-panel focus-visible:outline-none focus-visible:shadow-focus"
         tabIndex={0}
+        role="group"
+        aria-label="Run timeline. Arrow keys step between events, Space plays."
         onKeyDown={handleKeyDown}
       >
         <svg
