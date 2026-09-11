@@ -274,7 +274,12 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="rounded-sm border border-steel-deep px-2.5 py-1.5 font-mono text-base text-steel hover:border-steel-dim hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+            // min-h/w-11 (44px) below md: the default padded size measured
+            // under 32px, too small to hit reliably by touch. Reset to the
+            // padding-only size at md, where a mouse cursor is precise and a
+            // bigger hit target would just look oversized next to the +/-
+            // readout.
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-sm border border-steel-deep px-2.5 py-1.5 font-mono text-base text-steel hover:border-steel-dim hover:text-ink disabled:cursor-not-allowed disabled:opacity-30 md:min-h-0 md:min-w-0"
             onClick={() => setZoomIndex((i) => Math.max(0, i - 1))}
             disabled={zoomIndex === 0}
           >
@@ -285,7 +290,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
           </span>
           <button
             type="button"
-            className="rounded-sm border border-steel-deep px-2.5 py-1.5 font-mono text-base text-steel hover:border-steel-dim hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-sm border border-steel-deep px-2.5 py-1.5 font-mono text-base text-steel hover:border-steel-dim hover:text-ink disabled:cursor-not-allowed disabled:opacity-30 md:min-h-0 md:min-w-0"
             onClick={() => setZoomIndex((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1))}
             disabled={zoomIndex === ZOOM_LEVELS.length - 1}
           >
@@ -357,7 +362,9 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
               aria-pressed={!isMuted}
               onClick={() => toggleCategory(entry.category)}
               title={isMuted ? `Show ${entry.label} events` : `Mute ${entry.label} events`}
-              className={`flex items-center gap-1.5 rounded-sm px-1.5 py-1 font-mono text-sm transition-colors duration-150 ${
+              // Same min-h-11 touch-target floor as the zoom buttons, reset
+              // at md where these are mouse targets instead.
+              className={`flex min-h-11 items-center gap-1.5 rounded-sm px-1.5 py-1 font-mono text-sm transition-colors duration-150 md:min-h-0 ${
                 isMuted ? "text-steel-dim" : "text-steel hover:text-ink"
               }`}
             >
