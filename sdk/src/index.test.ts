@@ -244,6 +244,31 @@ test("logEvent assigns seq monotonically starting from run_start at 0", async (t
   await run.end({ status: "completed" });
 });
 
+test("a payload mutated after logEvent still flushes its original value", async (t) => {
+  const calls = mockFetch(t, () => ({ ok: true }));
+  const replay = new Replay({ endpoint: ENDPOINT, flushIntervalMs: 50_000 });
+  const run = replay.startRun({ name: "job-scraper" });
+
+  const payload: Record<string, unknown> = { toolName: "search", args: { query: "original" } };
+  run.logEvent({ type: "tool_call", payload });
+  // Host reuses/mutates the same object after handing it to logEvent - common
+  // when an agent threads one options object through a loop. The recorded event
+  // must be a snapshot taken at logEvent time, not a live alias.
+  (payload["args"] as Record<string, unknown>)["query"] = "mutated";
+  payload["toolName"] = "other";
+
+  await run.end({ status: "completed" });
+
+  const batchCall = calls.find((c) => c.url === `${ENDPOINT}/runs/${run.id}/events`);
+  assert.ok(batchCall, "expected a batch POST to /runs/:id/events");
+  const events = (batchCall!.body as { events: { type: string; payload: Record<string, unknown> }[] })
+    .events;
+  const toolCall = events.find((e) => e.type === "tool_call");
+  assert.ok(toolCall, "expected the tool_call event in the batch");
+  assert.equal(toolCall!.payload["toolName"], "search");
+  assert.equal((toolCall!.payload["args"] as Record<string, unknown>)["query"], "original");
+});
+
 test("logEvent after end is a silent no-op, not a throw", async (t) => {
   mockFetch(t, () => ({ ok: true }));
   const replay = new Replay({ endpoint: ENDPOINT, flushIntervalMs: 50_000 });

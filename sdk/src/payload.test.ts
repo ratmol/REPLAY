@@ -7,6 +7,18 @@ test("passes a small payload through unchanged", () => {
   assert.deepEqual(truncatePayload(payload), payload);
 });
 
+test("returns a deep copy, not the caller's object, on the under-limit path", () => {
+  const payload: Record<string, unknown> = { toolName: "search", args: { query: "hi" } };
+  const result = truncatePayload(payload);
+  // Structurally equal but a distinct object graph, so a later mutation of the
+  // caller's object cannot reach into what we buffered.
+  assert.deepEqual(result, payload);
+  assert.notEqual(result, payload);
+  assert.notEqual(result["args"], payload["args"]);
+  (payload["args"] as Record<string, unknown>)["query"] = "mutated";
+  assert.equal((result["args"] as Record<string, unknown>)["query"], "hi");
+});
+
 test("truncates a payload over 50KB", () => {
   const big = { blob: "x".repeat(60 * 1024) };
   const result = truncatePayload(big);

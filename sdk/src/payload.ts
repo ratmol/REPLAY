@@ -24,7 +24,13 @@ export function truncatePayload(payload: Record<string, unknown>): Record<string
 
   const byteLength = encoder.encode(serialized).length;
   if (byteLength <= MAX_PAYLOAD_BYTES) {
-    return payload;
+    // Return a deep copy, not the caller's object by reference. The buffered
+    // event outlives this call (it waits in the ring buffer until the next
+    // flush), so aliasing the host's live object would let a mutation between
+    // logEvent and flush ship the mutated value, and would pin the host's
+    // object graph in the buffer until then. We already serialized it for the
+    // size check above, so a snapshot costs one extra parse and nothing more.
+    return JSON.parse(serialized) as Record<string, unknown>;
   }
 
   return {
