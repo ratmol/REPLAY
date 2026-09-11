@@ -36,8 +36,13 @@ test("stepping is exact-match aware, not just nearest", () => {
   assert.equal(findPreviousTime(times, 10), 0);
 });
 
-test("handles duplicate timestamps without getting stuck", () => {
+test("steps onto the second of two same-millisecond events, not past it", () => {
+  // Two events sharing a timestamp (routine for agent runs - e.g. a
+  // tool_call and its retry) used to be unreachable: stepping forward from
+  // the first 10 jumped straight to 20, and stepping backward from the
+  // second 10 jumped straight to 0. Index-based stepping lands on the
+  // duplicate itself in both directions instead of skipping over it.
   const times = [0, 10, 10, 20];
-  assert.equal(findNextTime(times, 10), 20);
-  assert.equal(findPreviousTime(times, 10), 0);
+  assert.equal(findNextTime(times, 10), 10);
+  assert.equal(findPreviousTime(times, 10), 10);
 });

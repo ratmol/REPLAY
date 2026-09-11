@@ -27,13 +27,35 @@ export const SCRUBBER_SPEED_LEVELS = SPEED_LEVELS;
 
 // Pure and separated from the hook on purpose: this is the one piece of
 // scrubber logic with real edge cases (no next/previous, exact-match
-// boundaries, an empty list) worth testing directly, without needing a
-// React-hook-testing dependency to exercise the rest of useScrubber.
+// boundaries, an empty list, duplicate timestamps) worth testing directly,
+// without needing a React-hook-testing dependency to exercise the rest of
+// useScrubber.
+//
+// Steps by array index (seq order), not by comparing distinct timestamp
+// values. Agent events routinely land in the same millisecond (a tool_call
+// and its retry can both stamp the same ms), and "the next time strictly
+// greater than this one" skips every duplicate but the last - the second of
+// two same-millisecond events could never be stepped onto. indexOf finds
+// the earliest occurrence of the current position and returns the entry one
+// index later in seq order, whether or not its value actually differs.
 export function findNextTime(sortedTimes: number[], afterMs: number): number | undefined {
+  const index = sortedTimes.indexOf(afterMs);
+  if (index !== -1) {
+    return sortedTimes[index + 1];
+  }
+  // No exact match (e.g. after a drag-seek that landed between events):
+  // fall back to the first time strictly after the given position.
   return sortedTimes.find((t) => t > afterMs);
 }
 
 export function findPreviousTime(sortedTimes: number[], beforeMs: number): number | undefined {
+  // Symmetric with findNextTime: lastIndexOf finds the latest occurrence of
+  // the current position, so stepping backward off of it always lands on
+  // the entry one index earlier, including a duplicate-timestamp neighbor.
+  const index = sortedTimes.lastIndexOf(beforeMs);
+  if (index !== -1) {
+    return index > 0 ? sortedTimes[index - 1] : undefined;
+  }
   let prev: number | undefined;
   for (const t of sortedTimes) {
     if (t >= beforeMs) {
