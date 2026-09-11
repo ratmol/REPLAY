@@ -75,6 +75,14 @@ export function useScrubber(events: EventRecord[]): Scrubber {
 
   const rafRef = useRef<number>();
   const lastFrameRef = useRef<number>();
+  // Mirrors currentMs so the rAF loop can read the latest position without
+  // depending on it - adding currentMs to the effect below would tear down
+  // and restart requestAnimationFrame (resetting lastFrameRef) on every
+  // frame it itself just produced.
+  const currentMsRef = useRef(currentMs);
+  useEffect(() => {
+    currentMsRef.current = currentMs;
+  }, [currentMs]);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -84,14 +92,23 @@ export function useScrubber(events: EventRecord[]): Scrubber {
     const tick = (time: number) => {
       if (lastFrameRef.current !== undefined) {
         const deltaMs = time - lastFrameRef.current;
-        setCurrentMs((prev) => {
-          const next = prev + deltaMs * SPEED_LEVELS[speedIndex]!;
-          if (next >= maxMs) {
-            setIsPlaying(false);
-            return maxMs;
-          }
-          return next;
-        });
+        const next = currentMsRef.current + deltaMs * SPEED_LEVELS[speedIndex]!;
+        // Stopping playback here, in the tick itself, rather than from
+        // inside a setCurrentMs updater: an updater is supposed to be a
+        // pure function of its previous value, and calling setIsPlaying as
+        // a side effect of one is exactly what StrictMode's double-invoke
+        // is designed to catch. Reading the previous position off a ref
+        // instead of the updater's `prev` argument is what makes that
+        // possible - the ref is ours to read from anywhere in the tick, not
+        // just inside the updater callback.
+        if (next >= maxMs) {
+          currentMsRef.current = maxMs;
+          setCurrentMs(maxMs);
+          setIsPlaying(false);
+        } else {
+          currentMsRef.current = next;
+          setCurrentMs(next);
+        }
       }
       lastFrameRef.current = time;
       rafRef.current = requestAnimationFrame(tick);
