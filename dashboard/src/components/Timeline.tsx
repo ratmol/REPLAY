@@ -1,4 +1,6 @@
 import {
+  memo,
+  useMemo,
   useState,
   type PointerEvent as ReactPointerEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -46,6 +48,117 @@ function formatTick(ms: number, msPerTick: number): string {
   return `${(ms / 1000).toFixed(decimals)}s`;
 }
 
+function buildTicks(totalWidth: number): number[] {
+  const ticks: number[] = [];
+  for (let x = 0; x <= totalWidth; x += TICK_SPACING_PX) {
+    ticks.push(x);
+  }
+  return ticks;
+}
+
+interface TimelineMarksProps {
+  items: TimelineItem[];
+  ticks: number[];
+  selected: TimelineItem | null;
+  muted: ReadonlySet<EventCategory>;
+  startMs: number;
+  pxPerMs: number;
+  totalWidth: number;
+  onSelect: (item: TimelineItem) => void;
+}
+
+// Everything on the track that does NOT move every frame: the baseline, the
+// tick ruler, and the event marks themselves. Split out and memoized so that
+// scrubber.currentMs changing ~60x/s during playback (which forces Timeline
+// itself to re-render, since it reads currentMs directly for the playhead
+// and the elapsed readout) doesn't also re-run pairing's item.map and
+// reconcile every SVG node in the run on every one of those frames - React
+// bails out of this component entirely as long as its props are
+// reference-equal, which they are unless events, selection, muting, zoom, or
+// track width actually change.
+const TimelineMarks = memo(function TimelineMarks({
+  items,
+  ticks,
+  selected,
+  muted,
+  startMs,
+  pxPerMs,
+  totalWidth,
+  onSelect,
+}: TimelineMarksProps) {
+  const toX = (timestamp: string) => (new Date(timestamp).getTime() - startMs) * pxPerMs;
+  return (
+    <>
+      <line
+        x1={0}
+        y1={TRACK_HEIGHT / 2}
+        x2={totalWidth}
+        y2={TRACK_HEIGHT / 2}
+        className="stroke-steel-deep"
+        strokeWidth={1}
+      />
+      {ticks.map((x) => (
+        <g key={x}>
+          <line
+            x1={x}
+            y1={8}
+            x2={x}
+            y2={TRACK_HEIGHT - 8}
+            className="stroke-border"
+            strokeWidth={1}
+          />
+          <text x={x + 4} y={TRACK_HEIGHT - 4} className="fill-steel font-mono text-[11px]">
+            {formatTick(x / pxPerMs, TICK_SPACING_PX / pxPerMs)}
+          </text>
+        </g>
+      ))}
+      {items.map((item) => {
+        const isSelected = isSameTimelineItem(item, selected);
+        const selectionClass = isSelected ? "stroke-ink stroke-2" : "stroke-none";
+        const mutedClass = muted.has(EVENT_CATEGORY[item.type]) ? "opacity-20" : "opacity-100";
+        return item.kind === "span" ? (
+          <rect
+            key={`span-${item.start.seq}`}
+            x={toX(item.start.timestamp)}
+            y={TRACK_HEIGHT / 2 - 8}
+            width={Math.max(toX(item.end.timestamp) - toX(item.start.timestamp), 3)}
+            height={16}
+            rx={3}
+            className={`${EVENT_FILL[item.type]} ${selectionClass} ${mutedClass} cursor-pointer transition-opacity duration-150`}
+            onPointerDown={() => onSelect(item)}
+          >
+            <title>{`${item.type} - seq ${item.start.seq} to ${item.end.seq}`}</title>
+          </rect>
+        ) : (
+          <circle
+            key={`point-${item.event.seq}`}
+            cx={toX(item.event.timestamp)}
+            cy={TRACK_HEIGHT / 2}
+            r={5}
+            className={`${EVENT_FILL[item.type]} ${selectionClass} ${mutedClass} cursor-pointer transition-opacity duration-150`}
+            onPointerDown={() => onSelect(item)}
+          >
+            <title>{`${item.type} - seq ${item.event.seq}`}</title>
+          </circle>
+        );
+      })}
+    </>
+  );
+});
+
+// The one thing that DOES move every frame, kept to two small shapes so
+// re-rendering it 60x/s during playback is cheap. Memoized anyway (on the
+// single `x` prop) so a drag or a scrub that doesn't actually move the
+// rounded pixel position skips even that.
+const Playhead = memo(function Playhead({ x }: { x: number }) {
+  return (
+    <>
+      <line x1={x} y1={0} x2={x} y2={TRACK_HEIGHT} className="stroke-signal" strokeWidth={2} />
+      <polygon points={`${x - 5},0 ${x + 5},0 ${x},7`} className="fill-signal" />
+    </>
+  );
+});
+
 interface TimelineProps {
   events: EventRecord[];
   scrubber: Scrubber;
@@ -64,25 +177,34 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
   const { ref: trackRef, width: trackWidth } =
     useElementWidth<HTMLDivElement>(FALLBACK_TRACK_WIDTH);
 
-  if (events.length === 0) {
-    return <StateMessage kind="empty" message="No events recorded for this run." />;
-  }
+  // pairEvents does two sorts plus an allocation over every event in the
+  // run; scrubber.currentMs changes ~60x/s during playback and on every
+  // pointermove during a drag, and without this, that work (and the
+  // items.map reconciliation below) reran on every one of those frames
+  // instead of only when the underlying events actually change.
+  const items = useMemo(() => pairEvents(events), [events]);
 
-  const items = pairEvents(events);
-  const startMs = new Date(events[0]!.timestamp).getTime();
-  const lastMs = new Date(events[events.length - 1]!.timestamp).getTime();
+  // Hooks can't follow the early return further down, so everything they
+  // depend on is computed defensively above it instead (an empty run just
+  // yields durationMs=1, pxPerMs=0, an empty ticks array - never read, since
+  // the return below fires first).
+  const startMs = events.length > 0 ? new Date(events[0]!.timestamp).getTime() : 0;
+  const lastMs = events.length > 0 ? new Date(events[events.length - 1]!.timestamp).getTime() : 0;
   // A run whose events all land in the same millisecond still needs a
   // non-zero duration, or pxPerMs is Infinity and every x is NaN.
   const durationMs = Math.max(lastMs - startMs, 1);
 
   const totalWidth = Math.max(trackWidth - TRACK_PADDING_PX, 200) * ZOOM_LEVELS[zoomIndex]!;
   const pxPerMs = totalWidth / durationMs;
-  const toX = (timestamp: string) => (new Date(timestamp).getTime() - startMs) * pxPerMs;
   const playheadX = Math.min(totalWidth, Math.max(0, (scrubber.currentMs - startMs) * pxPerMs));
 
-  const ticks: number[] = [];
-  for (let x = 0; x <= totalWidth; x += TICK_SPACING_PX) {
-    ticks.push(x);
+  // Only a new array reference when totalWidth itself changes (zoom or
+  // resize), not on every currentMs-driven render, so TimelineMarks below -
+  // which receives it as a prop - keeps bailing out during playback/drag.
+  const ticks = useMemo(() => buildTicks(totalWidth), [totalWidth]);
+
+  if (events.length === 0) {
+    return <StateMessage kind="empty" message="No events recorded for this run." />;
   }
 
   function seekFromPointer(event: ReactPointerEvent<SVGSVGElement>) {
@@ -210,71 +332,17 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
         >
-          <line
-            x1={0}
-            y1={TRACK_HEIGHT / 2}
-            x2={totalWidth}
-            y2={TRACK_HEIGHT / 2}
-            className="stroke-steel-deep"
-            strokeWidth={1}
+          <TimelineMarks
+            items={items}
+            ticks={ticks}
+            selected={selected}
+            muted={muted}
+            startMs={startMs}
+            pxPerMs={pxPerMs}
+            totalWidth={totalWidth}
+            onSelect={onSelect}
           />
-          {ticks.map((x) => (
-            <g key={x}>
-              <line
-                x1={x}
-                y1={8}
-                x2={x}
-                y2={TRACK_HEIGHT - 8}
-                className="stroke-border"
-                strokeWidth={1}
-              />
-              <text x={x + 4} y={TRACK_HEIGHT - 4} className="fill-steel font-mono text-[11px]">
-                {formatTick(x / pxPerMs, TICK_SPACING_PX / pxPerMs)}
-              </text>
-            </g>
-          ))}
-          {items.map((item) => {
-            const isSelected = isSameTimelineItem(item, selected);
-            const selectionClass = isSelected ? "stroke-ink stroke-2" : "stroke-none";
-            const mutedClass = muted.has(EVENT_CATEGORY[item.type]) ? "opacity-20" : "opacity-100";
-            return item.kind === "span" ? (
-              <rect
-                key={`span-${item.start.seq}`}
-                x={toX(item.start.timestamp)}
-                y={TRACK_HEIGHT / 2 - 8}
-                width={Math.max(toX(item.end.timestamp) - toX(item.start.timestamp), 3)}
-                height={16}
-                rx={3}
-                className={`${EVENT_FILL[item.type]} ${selectionClass} ${mutedClass} cursor-pointer transition-opacity duration-150`}
-                onPointerDown={() => onSelect(item)}
-              >
-                <title>{`${item.type} - seq ${item.start.seq} to ${item.end.seq}`}</title>
-              </rect>
-            ) : (
-              <circle
-                key={`point-${item.event.seq}`}
-                cx={toX(item.event.timestamp)}
-                cy={TRACK_HEIGHT / 2}
-                r={5}
-                className={`${EVENT_FILL[item.type]} ${selectionClass} ${mutedClass} cursor-pointer transition-opacity duration-150`}
-                onPointerDown={() => onSelect(item)}
-              >
-                <title>{`${item.type} - seq ${item.event.seq}`}</title>
-              </circle>
-            );
-          })}
-          <line
-            x1={playheadX}
-            y1={0}
-            x2={playheadX}
-            y2={TRACK_HEIGHT}
-            className="stroke-signal"
-            strokeWidth={2}
-          />
-          <polygon
-            points={`${playheadX - 5},0 ${playheadX + 5},0 ${playheadX},7`}
-            className="fill-signal"
-          />
+          <Playhead x={playheadX} />
         </svg>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">

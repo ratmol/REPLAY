@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { EventRecord, RunSummary } from "replay-shared";
 import { fetchEvents, fetchRun } from "../api";
 import { Link, useSearchParam } from "../router";
@@ -45,19 +45,27 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
   const [selected, setSelected] = useState<TimelineItem | null>(null);
   const [seqParam, setSeqParam] = useSearchParam("seq");
 
-  function handleSelect(item: TimelineItem) {
-    // Clicking the already-selected event closes the inspector instead of
-    // re-selecting it - the common "toggle" behavior for a detail panel.
-    //
-    // Computed from `selected` rather than inside a setSelected updater: an
-    // updater runs during render, and calling the URL setter from in there
-    // updates the router while this component is rendering. React warns about
-    // exactly that, and it is a real hazard rather than a style note - the two
-    // states can be committed out of step.
-    const next = isSameTimelineItem(selected, item) ? null : item;
-    setSelected(next);
-    setSeqParam(next ? String(itemStartSeq(next)) : null);
-  }
+  // Wrapped in useCallback (keyed on `selected`, which only changes on an
+  // actual selection, not every scrubber tick) so Timeline receives the same
+  // onSelect reference across playback/drag frames - otherwise its memoized
+  // TimelineMarks child would see a "changed" prop every frame and re-render
+  // regardless of the memoization there.
+  const handleSelect = useCallback(
+    (item: TimelineItem) => {
+      // Clicking the already-selected event closes the inspector instead of
+      // re-selecting it - the common "toggle" behavior for a detail panel.
+      //
+      // Computed from `selected` rather than inside a setSelected updater: an
+      // updater runs during render, and calling the URL setter from in there
+      // updates the router while this component is rendering. React warns
+      // about exactly that, and it is a real hazard rather than a style note
+      // - the two states can be committed out of step.
+      const next = isSameTimelineItem(selected, item) ? null : item;
+      setSelected(next);
+      setSeqParam(next ? String(itemStartSeq(next)) : null);
+    },
+    [selected, setSeqParam],
+  );
 
   function handleClose() {
     setSelected(null);
