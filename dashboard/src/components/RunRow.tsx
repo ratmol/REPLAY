@@ -78,7 +78,11 @@ export default function RunRow({ run, pinned, onTogglePin }: RunRowProps) {
           // The row itself is the link (the whole thing navigates on click),
           // so this nested button must stop the click from reaching it:
           // preventDefault blocks the anchor's own navigation, stopPropagation
-          // stops it from also reaching Link's own routing handler.
+          // stops it from also reaching Link's own routing handler. That also
+          // means a <button> nested inside an <a> - technically invalid HTML.
+          // A sibling grid cell would need a new column across this row and
+          // RunsListPage's header row to stay aligned; kept nested with
+          // explicit focus handling instead, which is the smaller change.
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -87,7 +91,7 @@ export default function RunRow({ run, pinned, onTogglePin }: RunRowProps) {
           className={`shrink-0 font-mono text-sm leading-none transition-colors ${
             pinned
               ? "text-signal"
-              : "text-steel-dim opacity-0 group-hover:opacity-100 hover:text-ink"
+              : "text-steel-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-ink"
           }`}
         >
           {pinned ? "★" : "☆"}
