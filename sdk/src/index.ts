@@ -249,14 +249,22 @@ export class Run {
       this.flushQueued = true;
       return this.flushPromise;
     }
-    this.flushPromise = this.flushOnce().then(() => {
+    // The settle handler must run on BOTH outcomes. flushOnce is built not to
+    // reject, but if it ever did (a bug slipping an unguarded throw past the
+    // onError guards), resetting flushPromise only in the success branch would
+    // leave it pinned to a rejected promise forever - every later flush() would
+    // hand back that same rejected promise and no event would ever be sent
+    // again. Running it as both handlers of .then keeps one failed flush from
+    // wedging the run permanently.
+    const settle = (): void | Promise<void> => {
       this.flushPromise = null;
       if (this.flushQueued) {
         this.flushQueued = false;
         return this.flush();
       }
       return undefined;
-    });
+    };
+    this.flushPromise = this.flushOnce().then(settle, settle);
     return this.flushPromise;
   }
 

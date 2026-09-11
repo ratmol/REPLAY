@@ -178,6 +178,40 @@ test("a throwing onError never rejects end() and never becomes an unhandled reje
   assert.deepEqual(unhandled, []);
 });
 
+test("a failed flush round does not wedge the run: a later flush still sends", async (t) => {
+  // First flush round happens while the collector is unreachable AND the
+  // host's onError throws - i.e. something inside the flush throws. flushPromise
+  // must not be left pinned to that round: if it were, every later flush()
+  // would return the same stale promise and no event would ever be sent again.
+  // Once the collector comes back, end()'s flush must create the run and drain
+  // the buffer.
+  let collectorUp = false;
+  const calls = mockFetch(t, () => (collectorUp ? { ok: true } : "reject"));
+  const replay = new Replay({
+    endpoint: ENDPOINT,
+    flushIntervalMs: 50_000,
+    onError: () => {
+      throw new Error("buggy host onError");
+    },
+  });
+  const run = replay.startRun({ name: "job-scraper" });
+  run.logEvent({ type: "tool_call", payload: {} });
+
+  // Let the constructor's flush attempt run and fail against the down collector.
+  await new Promise((resolve) => setImmediate(resolve));
+
+  collectorUp = true;
+  await assert.doesNotReject(() => run.end({ status: "completed" }));
+
+  // The run was created and the whole buffer was drained on the recovery flush.
+  assert.ok(calls.some((c) => c.url === `${ENDPOINT}/runs`));
+  const batchCall = calls.find((c) => c.url === `${ENDPOINT}/runs/${run.id}/events`);
+  assert.ok(batchCall, "expected the recovery flush to send an events batch");
+  const types = (batchCall!.body as { events: { type: string }[] }).events.map((e) => e.type);
+  assert.deepEqual(types, ["run_start", "tool_call", "run_end"]);
+  assert.deepEqual(run.getBufferedEvents(), []);
+});
+
 test("flushes on an interval without end() being called", async (t) => {
   const calls = mockFetch(t, () => ({ ok: true }));
   const replay = new Replay({ endpoint: ENDPOINT, flushIntervalMs: 10 });
