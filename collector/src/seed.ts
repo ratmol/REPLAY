@@ -200,6 +200,86 @@ function build(i: number): Built {
   };
 }
 
+// Two extra runs that exercise documented features the generated set above
+// doesn't reach, with their own stable ids (distinct "feedface" prefix) so they
+// stay deep-linkable across restarts:
+//   1. a run carrying a truncated payload, so the dashboard's truncation badge
+//      (isTruncatedPayload / the _truncated marker) has something to render;
+//   2. a ~300-event run, so the timeline's many-nodes path is exercisable.
+const TRUNCATED_RUN_ID = "feedface-0000-4000-8000-000000000001";
+const LARGE_RUN_ID = "feedface-0000-4000-8000-000000000002";
+
+function buildTruncatedRun(): Built {
+  const t0 = NOW - 90 * MIN;
+  const at = (ms: number): number => t0 + ms;
+  const iso = (ms: number): string => new Date(at(ms)).toISOString();
+  const model = MODELS[1]!;
+  const events: Event[] = [
+    ev(0, "run_start", at(0), { agentName: "assistant", model }),
+    ev(1, "llm_call", at(120), { model, messages: [{ role: "user", content: "Fetch the full report." }] }, { durationMs: 540, tokensIn: 900 }),
+    ev(2, "tool_call", at(700), { toolName: "fetch_report", callId: "call_1", args: { id: "q3" } }),
+    // The marker shape the SDK writes when a payload exceeds 50KB
+    // (docs/EVENT_SCHEMA.md section 4): _truncated + _originalBytes + _preview.
+    // isTruncatedPayload keys off _truncated === true; the badge reads it back
+    // from here.
+    ev(3, "tool_result", at(1300), {
+      toolName: "fetch_report",
+      callId: "call_1",
+      ok: true,
+      _truncated: true,
+      _originalBytes: 83421,
+      _preview: '{"rows":[{"id":1,"name":"Acme","total":9910.55},{"id":2,',
+    }, { durationMs: 600 }),
+    ev(4, "llm_response", at(1900), { finishReason: "stop", content: "Summarized the report." }, { tokensOut: 140, costUsd: 0.0071 }),
+    ev(5, "run_end", at(1960), { status: "completed", summary: "Handled an oversized tool result." }),
+  ];
+  return {
+    run: {
+      id: TRUNCATED_RUN_ID,
+      name: "report-fetcher-agent",
+      agentName: "assistant",
+      model,
+      startedAt: new Date(t0).toISOString(),
+      metadata: { sample: true, demonstrates: "truncated-payload" },
+    },
+    events,
+    end: { status: "completed", endedAt: iso(1960) },
+  };
+}
+
+function buildLargeRun(): Built {
+  const t0 = NOW - 200 * MIN;
+  const model = MODELS[0]!;
+  const tool = TOOLS[0]!;
+  const events: Event[] = [ev(0, "run_start", t0, { agentName: "assistant", model })];
+  // ~300 events: repeated tool loops (llm_call -> llm_response -> tool_call ->
+  // tool_result), then a run_end, each 40ms apart so the timeline spreads them.
+  let seq = 1;
+  const stepMs = 40;
+  const loops = 74; // 1 + 74*4 + 1 = 298 events
+  for (let i = 0; i < loops; i += 1) {
+    const base = seq * stepMs;
+    events.push(ev(seq++, "llm_call", t0 + base, { model, messages: [{ role: "user", content: `Step ${i}` }] }, { durationMs: 30, tokensIn: 60 }));
+    events.push(ev(seq++, "llm_response", t0 + seq * stepMs, { finishReason: "tool_calls", toolCalls: [{ toolName: tool, callId: `call_${i}` }] }, { tokensOut: 20, costUsd: 0.0002 }));
+    events.push(ev(seq++, "tool_call", t0 + seq * stepMs, { toolName: tool, callId: `call_${i}`, args: { n: i } }));
+    events.push(ev(seq++, "tool_result", t0 + seq * stepMs, { toolName: tool, callId: `call_${i}`, ok: true, result: { n: i } }, { durationMs: 20 }));
+  }
+  const endMs = t0 + (seq + 1) * stepMs;
+  events.push(ev(seq, "run_end", endMs, { status: "completed", summary: `Long run with ${seq + 1} events.` }));
+  return {
+    run: {
+      id: LARGE_RUN_ID,
+      name: "batch-processor-agent",
+      agentName: "assistant",
+      model,
+      startedAt: new Date(t0).toISOString(),
+      metadata: { sample: true, demonstrates: "large-event-count" },
+    },
+    events,
+    end: { status: "completed", endedAt: new Date(endMs).toISOString() },
+  };
+}
+
 // Seeds any sample run whose id is not already present, when SEED_DEMO is set.
 // Never throws: a blank dashboard is a far better failure than a boot crash, so
 // a seeding problem is logged and swallowed rather than allowed to take the
@@ -210,8 +290,12 @@ export function seedSampleRunsIfMissing(): void {
     return;
   }
   let seeded = 0;
-  for (let i = 0; i < KINDS.length; i += 1) {
-    const { run, events, end } = build(i);
+  const built: Built[] = [
+    ...Array.from({ length: KINDS.length }, (_unused, i) => build(i)),
+    buildTruncatedRun(),
+    buildLargeRun(),
+  ];
+  for (const { run, events, end } of built) {
     try {
       if (getRun(run.id)) {
         continue;
