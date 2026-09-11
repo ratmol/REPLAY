@@ -1,5 +1,6 @@
 import type { RunSummary } from "replay-shared";
 import { Link } from "../router";
+import { runDurationMs } from "../lib/runFilter";
 
 export const STATUS_COLOR: Record<RunSummary["status"], string> = {
   running: "text-status-running",
@@ -7,11 +8,7 @@ export const STATUS_COLOR: Record<RunSummary["status"], string> = {
   failed: "text-status-failed",
 };
 
-function formatDuration(startedAt: string, endedAt?: string): string {
-  if (!endedAt) {
-    return "running";
-  }
-  const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime();
+function formatDurationMs(ms: number): string {
   if (ms < 1000) {
     return `${ms}ms`;
   }
@@ -22,6 +19,22 @@ function formatDuration(startedAt: string, endedAt?: string): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}m ${seconds}s`;
+}
+
+// runFilter's "Longest" sort ranks a still-running run by elapsed time (via
+// runDurationMs, measured to now), but this used to just render the word
+// "running" with no number - so a stale running run topping that sort
+// looked broken rather than like the sort doing its job. Reusing
+// runDurationMs here means the number in the row is the same one the sort
+// is actually ranking by.
+function formatDuration(run: RunSummary): string {
+  if (run.status === "running") {
+    return `running · ${formatDurationMs(runDurationMs(run, Date.now()))}`;
+  }
+  if (!run.endedAt) {
+    return "running";
+  }
+  return formatDurationMs(new Date(run.endedAt).getTime() - new Date(run.startedAt).getTime());
 }
 
 function formatCost(costUsd: number): string {
@@ -95,7 +108,7 @@ export default function RunRow({ run, pinned, onTogglePin }: RunRowProps) {
         )}
       </span>
       <span className={`${RUN_ROW_DESKTOP_ONLY} text-right font-mono text-xs text-ink-muted`}>
-        {formatDuration(run.startedAt, run.endedAt)}
+        {formatDuration(run)}
       </span>
       <span className="text-right font-mono text-xs text-ink-muted">
         {formatCost(run.totalCostUsd)}
