@@ -29,13 +29,20 @@ export interface RunRow {
 // Prepared statements are hoisted to module scope so the batch insert loop in
 // appendEvents doesn't re-prepare a statement per event.
 
+// INSERT OR IGNORE, not a plain INSERT: the SDK is allowed to retry a POST
+// /runs after a timeout (same contract as the events path), so a second insert
+// with the same primary key must be a no-op, not a SQLITE_CONSTRAINT throw that
+// the route would surface as a 500.
 const insertRunStmt = db.prepare(`
-  INSERT INTO runs (id, name, agent_name, model, started_at, ended_at, status, metadata)
+  INSERT OR IGNORE INTO runs (id, name, agent_name, model, started_at, ended_at, status, metadata)
   VALUES (@id, @name, @agentName, @model, @startedAt, NULL, 'running', @metadata)
 `);
 
-export function createRun(request: CreateRunRequest): void {
-  insertRunStmt.run({
+// Returns true if this call created the row, false if it already existed. The
+// route treats both as success (idempotent create); the flag only chooses
+// 201 vs 200.
+export function createRun(request: CreateRunRequest): boolean {
+  const result = insertRunStmt.run({
     id: request.id,
     name: request.name,
     agentName: request.agentName ?? null,
@@ -43,6 +50,7 @@ export function createRun(request: CreateRunRequest): void {
     startedAt: request.startedAt,
     metadata: request.metadata ? JSON.stringify(request.metadata) : null,
   });
+  return result.changes > 0;
 }
 
 const getRunStmt = db.prepare("SELECT * FROM runs WHERE id = ?");
@@ -51,17 +59,27 @@ export function getRun(runId: string): RunRow | undefined {
   return getRunStmt.get(runId) as RunRow | undefined;
 }
 
+// WHERE status = 'running' guards the one legal transition: a run finishes
+// exactly once. A completed/failed run cannot be re-patched or have its
+// ended_at rewritten, so a late or duplicate PATCH changes zero rows and the
+// route answers 409 rather than silently overwriting the terminal state.
 const updateRunStatusStmt = db.prepare(
-  "UPDATE runs SET status = @status, ended_at = @endedAt WHERE id = @id",
+  "UPDATE runs SET status = @status, ended_at = @endedAt WHERE id = @id AND status = 'running'",
 );
 
 // Not a violation of "events are append-only, no UPDATE": that invariant is
 // scoped to the events table specifically. runs.status/ended_at are
 // documented state (docs/EVENT_SCHEMA.md section 5: "ended_at NULL while
 // running") that's expected to transition exactly once, same category as the
-// derived-totals UPDATE in appendEventsTxn below.
-export function updateRunStatus(runId: string, patch: PatchRunRequest): void {
-  updateRunStatusStmt.run({ id: runId, status: patch.status, endedAt: patch.endedAt });
+// derived-totals UPDATE in appendEventsTxn below. Returns true if the run was
+// running and is now terminal, false if it was already terminal (no-op).
+export function updateRunStatus(runId: string, patch: PatchRunRequest): boolean {
+  const result = updateRunStatusStmt.run({
+    id: runId,
+    status: patch.status,
+    endedAt: patch.endedAt,
+  });
+  return result.changes > 0;
 }
 
 const insertEventStmt = db.prepare(`
@@ -71,11 +89,17 @@ const insertEventStmt = db.prepare(`
     (@runId, @seq, @timestamp, @type, @durationMs, @payload, @tokensIn, @tokensOut, @costUsd)
 `);
 
+// total_cost_usd is ROUNDed to 8 decimals because summing floats
+// (e.g. 0.0033 + 0.0034) yields binary-fraction noise like
+// 0.006699999999999999 that would otherwise reach the API verbatim. The event
+// rows stay untouched (append-only); only this derived total is cleaned. Eight
+// places is well beyond any real per-run cost precision and keeps the value a
+// clean JSON number.
 const recomputeTotalsStmt = db.prepare(`
   UPDATE runs
   SET total_tokens_in = (SELECT COALESCE(SUM(tokens_in), 0) FROM events WHERE run_id = @runId),
       total_tokens_out = (SELECT COALESCE(SUM(tokens_out), 0) FROM events WHERE run_id = @runId),
-      total_cost_usd = (SELECT COALESCE(SUM(cost_usd), 0) FROM events WHERE run_id = @runId)
+      total_cost_usd = (SELECT ROUND(COALESCE(SUM(cost_usd), 0), 8) FROM events WHERE run_id = @runId)
   WHERE id = @runId
 `);
 

@@ -7,7 +7,10 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { bodyLimit } from "hono/body-limit";
 import { serve } from "@hono/node-server";
+import { fileURLToPath } from "node:url";
+import { realpathSync } from "node:fs";
 import { z } from "zod";
 import {
   CreateRunRequestSchema,
@@ -29,6 +32,18 @@ import {
 import { seedSampleRunsIfMissing } from "./seed.js";
 
 const MAX_BATCH_SIZE = 500;
+
+// Reject an oversized body before the route reads and parses it, so a runaway
+// or hostile payload can't force a large allocation. 4MB comfortably clears a
+// full 500-event batch of 50KB-truncated payloads.
+// TODO: a shared write token to authenticate SDK/dashboard writes is a
+// deferred decision - it needs the SDK and dashboard env/config rolled out in
+// lockstep, so it is intentionally not enforced here yet.
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
+const writeBodyLimit = bodyLimit({
+  maxSize: MAX_BODY_BYTES,
+  onError: (c) => c.json({ error: "request body too large" }, 413),
+});
 
 // The SDK talks to this API from Node, where CORS doesn't apply - it's a
 // browser-only enforcement. This is entirely for the dashboard, a different
@@ -65,8 +80,23 @@ function serializeRun(row: RunRow): RunSummary {
     totalTokensIn: row.total_tokens_in,
     totalTokensOut: row.total_tokens_out,
     totalCostUsd: row.total_cost_usd,
-    metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+    metadata: parseStoredJson(row.metadata) as Record<string, unknown> | undefined,
   };
+}
+
+// One malformed row must not 500 an entire page. Stored JSON is written by the
+// collector itself and is trusted (invariant 4), so this only ever fires on
+// out-of-band corruption or a manual edit; when it does, the row degrades to a
+// small marker object instead of taking the whole request down.
+function parseStoredJson(raw: string | null): unknown {
+  if (raw === null) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return { _parseError: "malformed stored JSON" };
+  }
 }
 
 function serializeEvent(row: EventRow): EventRecord {
@@ -78,7 +108,9 @@ function serializeEvent(row: EventRow): EventRecord {
     type: row.type as EventRecord["type"],
     timestamp: row.timestamp,
     durationMs: row.duration_ms ?? undefined,
-    payload: JSON.parse(row.payload),
+    // Guarded the same way as run metadata: a single corrupt payload becomes a
+    // marker object rather than failing the whole events page.
+    payload: (parseStoredJson(row.payload) ?? {}) as Record<string, unknown>,
     tokensIn: row.tokens_in ?? undefined,
     tokensOut: row.tokens_out ?? undefined,
     costUsd: row.cost_usd ?? undefined,
@@ -87,11 +119,17 @@ function serializeEvent(row: EventRow): EventRecord {
 
 const app = new Hono();
 
-app.use("/*", cors({ origin: DASHBOARD_ORIGIN }));
+// allowMethods lists exactly the verbs this API implements. The default set
+// advertises PUT/DELETE the collector has no routes for, which would let a
+// browser preflight a method that can only 404.
+app.use(
+  "/*",
+  cors({ origin: DASHBOARD_ORIGIN, allowMethods: ["GET", "POST", "PATCH", "OPTIONS"] }),
+);
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
-app.post("/runs", async (c) => {
+app.post("/runs", writeBodyLimit, async (c) => {
   const body = await readJsonBody(c.req.raw);
   if (body === undefined) {
     return c.json({ error: "invalid JSON body" }, 400);
@@ -102,11 +140,13 @@ app.post("/runs", async (c) => {
     return c.json({ error: "invalid run", issues: parsed.error.issues }, 400);
   }
 
-  createRun(parsed.data);
-  return c.json({ id: parsed.data.id }, 201);
+  // Idempotent: a retried create finds the row already present and still
+  // succeeds. 201 when we created it, 200 when it already existed.
+  const created = createRun(parsed.data);
+  return c.json({ id: parsed.data.id }, created ? 201 : 200);
 });
 
-app.post("/runs/:id/events", async (c) => {
+app.post("/runs/:id/events", writeBodyLimit, async (c) => {
   const runId = c.req.param("id");
   const body = await readJsonBody(c.req.raw);
   if (body === undefined) {
@@ -133,7 +173,7 @@ app.post("/runs/:id/events", async (c) => {
   return c.json(result, 200);
 });
 
-app.patch("/runs/:id", async (c) => {
+app.patch("/runs/:id", writeBodyLimit, async (c) => {
   const runId = c.req.param("id");
   const body = await readJsonBody(c.req.raw);
   if (body === undefined) {
@@ -149,7 +189,13 @@ app.patch("/runs/:id", async (c) => {
     return c.json({ error: "invalid patch", issues: parsed.error.issues }, 400);
   }
 
-  updateRunStatus(runId, parsed.data);
+  // Only a running run can transition to a terminal state. If the run is
+  // already completed/failed, updateRunStatus changes nothing and we answer
+  // 409 rather than rewrite a finished run's status or ended_at.
+  const updated = updateRunStatus(runId, parsed.data);
+  if (!updated) {
+    return c.json({ error: `run is not running: ${runId}` }, 409);
+  }
   return c.json({ ok: true }, 200);
 });
 
@@ -202,11 +248,40 @@ async function readJsonBody(request: Request): Promise<unknown> {
   }
 }
 
-// Rebuild any missing sample runs before serving, so a hosted read-only
-// instance whose disk was wiped on restart comes back with data. No-op unless
-// SEED_DEMO is set.
-seedSampleRunsIfMissing();
+// Exported so the test suite can drive the routes with app.request(...)
+// without binding a port. The seed + serve bootstrap below is guarded to run
+// only when this module is the process entry point, so importing `app` has no
+// side effects.
+export { app };
 
-const port = Number(process.env.PORT ?? 4747);
-serve({ fetch: app.fetch, port });
-console.log(`replay-collector listening on :${port}`);
+function startServer(): void {
+  // Rebuild any missing sample runs before serving, so a hosted read-only
+  // instance whose disk was wiped on restart comes back with data. No-op unless
+  // SEED_DEMO is set.
+  seedSampleRunsIfMissing();
+
+  const port = Number(process.env.PORT ?? 4747);
+  serve({ fetch: app.fetch, port });
+  console.log(`replay-collector listening on :${port}`);
+}
+
+// argv[1] is the script node/tsx was told to run; when that resolves to this
+// file, the collector was launched directly and should serve. When another
+// module (a test) imports it, argv[1] is that other entry point and we stay
+// inert. realpathSync normalizes drive-letter case and separators so the
+// comparison holds on Windows and through tsx.
+function isEntryPoint(): boolean {
+  const entry = process.argv[1];
+  if (!entry) {
+    return false;
+  }
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) {
+  startServer();
+}
