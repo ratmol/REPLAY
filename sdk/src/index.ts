@@ -159,11 +159,14 @@ export class Run {
     // short-lived script can't exit. Individual in-flight fetches are not
     // unref'd, so a flush already underway still gets to finish naturally.
     this.flushTimer = setInterval(() => {
-      void this.flush();
+      // Fire-and-forget: nothing awaits an interval flush, so a rejection here
+      // would be an unhandledRejection. flush() is built not to reject, but the
+      // .catch makes that guarantee local and independent of that assumption.
+      this.flush().catch(() => {});
     }, config.flushIntervalMs);
     this.flushTimer.unref();
 
-    void this.flush();
+    this.flush().catch(() => {});
   }
 
   logEvent(options: LogEventOptions): void {
@@ -178,7 +181,7 @@ export class Run {
         costUsd: options.costUsd,
       });
     } catch (error) {
-      this.config.onError?.(error);
+      this.safeOnError(error);
     }
   }
 
@@ -193,7 +196,7 @@ export class Run {
     try {
       this.push("run_end", { status: options.status, summary: options.summary });
     } catch (error) {
-      this.config.onError?.(error);
+      this.safeOnError(error);
     }
     await this.flush();
   }
@@ -205,6 +208,20 @@ export class Run {
 
   get droppedEventCount(): number {
     return this.buffer.droppedCount;
+  }
+
+  // The host's onError is arbitrary user code and may itself throw. If that
+  // throw escaped, it would defeat the whole point of the callback and crash
+  // the host (invariant 1) - the worst case being an interval- or
+  // constructor-triggered flush, where the rejection has no awaiter and Node
+  // turns it into a process-killing unhandledRejection. There is nowhere safe
+  // to report a broken error reporter, so the secondary throw is swallowed.
+  private safeOnError(error: unknown): void {
+    try {
+      this.config.onError?.(error);
+    } catch {
+      // Intentionally empty: see above.
+    }
   }
 
   private push(
@@ -254,7 +271,7 @@ export class Run {
         metadata: this.startOptions.metadata,
       });
       if (!created) {
-        this.config.onError?.(
+        this.safeOnError(
           new Error(
             `replay-sdk: could not reach the collector to create run "${this.id}" at ` +
               `${this.config.endpoint}/runs after 1 retry. Events are buffering locally ` +
@@ -276,7 +293,7 @@ export class Run {
         events: batch,
       });
       if (!sent) {
-        this.config.onError?.(
+        this.safeOnError(
           new Error(
             `replay-sdk: failed to send ${batch.length} event(s) for run "${this.id}" to ` +
               `${this.config.endpoint} after 1 retry. These events were dropped, not requeued - ` +
@@ -296,7 +313,7 @@ export class Run {
         endedAt: this.endedAt,
       });
       if (!patched) {
-        this.config.onError?.(
+        this.safeOnError(
           new Error(
             `replay-sdk: failed to update run "${this.id}" status to "${this.endResult.status}" ` +
               `after 1 retry. The run_end event was recorded, but runs.status may still show "running".`,

@@ -144,6 +144,40 @@ test("a batch that fails both attempts calls onError and does not requeue", asyn
   assert.deepEqual(run.getBufferedEvents(), []);
 });
 
+test("a throwing onError never rejects end() and never becomes an unhandled rejection", async (t) => {
+  // The collector is down (every request rejects), so onError fires - and the
+  // host's onError is itself buggy and throws. The SDK must absorb both: the
+  // network failure and the callback's own throw. Two distinct escape routes:
+  // (a) end() is awaited, so a rejection would surface into host code, and
+  // (b) the constructor's fire-and-forget flush has no awaiter, so a rejection
+  //     would become a process-killing unhandledRejection.
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown): void => {
+    unhandled.push(reason);
+  };
+  process.on("unhandledRejection", onUnhandled);
+  t.after(() => process.off("unhandledRejection", onUnhandled));
+
+  mockFetch(t, () => "reject");
+  const replay = new Replay({
+    endpoint: ENDPOINT,
+    flushIntervalMs: 50_000,
+    onError: () => {
+      throw new Error("buggy host onError");
+    },
+  });
+  const run = replay.startRun({ name: "job-scraper" });
+  run.logEvent({ type: "tool_call", payload: {} });
+
+  // (a) awaited path.
+  await assert.doesNotReject(() => run.end({ status: "completed" }));
+
+  // (b) fire-and-forget path: let the constructor flush and any queued
+  // microtasks settle, then confirm nothing landed on unhandledRejection.
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(unhandled, []);
+});
+
 test("flushes on an interval without end() being called", async (t) => {
   const calls = mockFetch(t, () => ({ ok: true }));
   const replay = new Replay({ endpoint: ENDPOINT, flushIntervalMs: 10 });
