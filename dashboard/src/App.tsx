@@ -8,19 +8,45 @@ const RUN_DETAIL_PATTERN = /^\/runs\/([^/]+)\/?$/;
 export default function App() {
   const path = useCurrentPath();
   const match = path.match(RUN_DETAIL_PATTERN);
+  const isHome = path === "/";
 
   return (
     <div className="mx-auto max-w-[1400px] px-6 md:px-10">
-      <SiteHeader isLanding={!match} />
+      <SiteHeader isLanding={isHome} />
       {/* The header floats over the page so the landing hero can pin to
           top-0 and occupy a full viewport exactly. Content that is not the
           hero pushes itself clear of it with this padding; the hero cancels
           it with a matching negative margin. */}
       <main className="pt-20">
-        {match ? <RunDetailPage runId={decodeURIComponent(match[1]!)} /> : <RunsListPage />}
+        {match ? (
+          <RunDetailPage runId={decodeURIComponent(match[1]!)} />
+        ) : isHome ? (
+          <RunsListPage />
+        ) : (
+          <NotFoundPage />
+        )}
       </main>
       <SiteFooter />
       <ShortcutOverlay />
+    </div>
+  );
+}
+
+// A path matching neither route (a stale link, a typo) previously fell
+// through to the landing page with no indication anything was wrong. This
+// is deliberately small - a portfolio dashboard with two real routes
+// doesn't need a designed 404 page, just an honest one.
+function NotFoundPage() {
+  return (
+    <div className="mt-16 flex flex-col items-start gap-4">
+      <p className="font-mono text-micro uppercase text-steel">404</p>
+      <h2 className="text-headline font-medium text-ink">Nothing recorded here</h2>
+      <p className="max-w-md text-lg leading-relaxed text-ink-muted">
+        There&apos;s no page at this address.
+      </p>
+      <Link to="/" className="font-mono text-sm text-brass hover:text-signal">
+        &larr; All runs
+      </Link>
     </div>
   );
 }
