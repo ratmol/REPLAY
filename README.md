@@ -1,5 +1,7 @@
 # Replay
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Flight recorder for AI agents. Record every tool call, retry, and cost, then
 replay the run on a timeline like game footage.
 
@@ -15,7 +17,15 @@ playback), an event inspector, and a cost breakdown.
 
 ## Demo
 
-A recorded walkthrough of the scrubber will be added here.
+The landing page's hero flies a real recorded run as flight telemetry -
+altitude is the run's cumulative cost, distance is elapsed time, and each
+waypoint is a real event - scrubbed by your own scroll position, not an
+autoplaying animation. It's hand-rolled SVG, no charting library, same rule as
+the timeline itself.
+
+A recorded walkthrough (GIF or video) of the scrubber has not been captured
+yet - that's a manual step left for later, not a placeholder for a broken
+link.
 
 ## How it works
 
