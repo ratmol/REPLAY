@@ -109,14 +109,16 @@ interface LinkProps {
   to: string;
   children: ReactNode;
   className?: string;
+  "aria-label"?: string;
 }
 
-export function Link({ to, children, className }: LinkProps) {
+export function Link({ to, children, className, ...rest }: LinkProps) {
   const navigate = useNavigate();
   return (
     <a
       href={to}
       className={className}
+      {...rest}
       onClick={(event) => {
         // Let the browser handle new-tab/new-window clicks natively - a
         // router that always intercepts breaks ctrl/cmd-click and

@@ -63,6 +63,11 @@ export default function RunRow({ run, pinned, onTogglePin }: RunRowProps) {
   return (
     <Link
       to={`/runs/${run.id}`}
+      // A screen reader otherwise reads the whole row's text content mashed
+      // together (status, pin button label, caret, name, model, duration,
+      // cost, run by run) - this states the three things that actually
+      // answer "which run do I want" in one readable sentence.
+      aria-label={`${run.name}, ${run.status}, ${formatCost(run.totalCostUsd)}`}
       className={`${RUN_ROW_GRID} group py-4 transition-colors duration-150 hover:bg-surface-overlay`}
     >
       <span className={`font-mono text-xs uppercase tracking-wide ${STATUS_COLOR[run.status]}`}>
