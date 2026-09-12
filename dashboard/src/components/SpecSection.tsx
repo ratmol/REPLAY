@@ -18,7 +18,7 @@ import type { EventType } from "replay-shared";
 
 const QUICKSTART = `import { Replay } from "replay-sdk";
 
-const replay = new Replay({ endpoint: "http://localhost:4747" });
+const replay = new Replay({ endpoint: "http://localhost:4747", onError: console.error });
 const run = replay.startRun({ name: "support-agent", model: "gpt-4o-mini" });
 
 run.logEvent({ type: "tool_call", payload: { toolName: "search", args: { q } } });
@@ -80,6 +80,10 @@ export default function SpecSection() {
       <div className="mt-12 grid gap-12 lg:grid-cols-2">
         <Reveal className="min-w-0">
           <h3 className="font-mono text-micro uppercase text-brass">Add it to an agent</h3>
+          <p className="mt-3 text-sm text-ink-muted">
+            Start the collector first (<code className="font-mono">pnpm dev:collector</code>,
+            :4747) - the SDK fails silently without <code className="font-mono">onError</code>.
+          </p>
           <InstrumentPanel className="mt-3 overflow-x-auto p-5">
             <pre className="font-mono text-sm leading-relaxed text-ink-muted">{QUICKSTART}</pre>
           </InstrumentPanel>

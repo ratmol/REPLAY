@@ -76,10 +76,14 @@ path. Full contract, including payload shapes and truncation rules:
 
 ## Quickstart
 
+Start the collector first (`pnpm dev:collector`, `:4747`) - the SDK never
+throws if it's unreachable, so without `onError` a down collector fails
+silently and you won't see why nothing showed up in the dashboard.
+
 ```ts
 import { Replay } from "replay-sdk";
 
-const replay = new Replay({ endpoint: "http://localhost:4747" });
+const replay = new Replay({ endpoint: "http://localhost:4747", onError: console.error });
 const run = replay.startRun({ name: "my-agent", model: "gpt-4o-mini" });
 
 run.logEvent({ type: "tool_call", payload: { toolName: "search", args: { q: "..." } } });
@@ -91,7 +95,8 @@ await run.end({ status: "completed" });
 `replay-sdk` isn't published to npm yet - for now it's consumed as a pnpm
 workspace package (see Setup below). The SDK never throws into your agent:
 if the collector is unreachable, your agent runs exactly as it would without
-this library.
+this library - `onError` is how you find out that happened instead of
+wondering why a run never showed up.
 
 ## Architecture
 
