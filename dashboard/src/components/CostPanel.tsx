@@ -30,6 +30,15 @@ interface CostPanelProps {
 export default function CostPanel({ run, events }: CostPanelProps) {
   const startMs = events.length > 0 ? new Date(events[0]!.timestamp).getTime() : 0;
   const steps = buildCostSteps(events, startMs);
+  // The per-step table is a cost ledger, and cost lands on the response half of
+  // a model exchange, so listing every zero-cost `llm_call` printed "$0.0000"
+  // for roughly half the rows. Show only the steps that actually spent, and let
+  // the per-call token counts roll up into the Tokens-in readout above instead.
+  // The sparkline still uses every step, so the cumulative curve is unchanged.
+  // Fallback to all steps when nothing has a cost, so a token-only run does not
+  // render an empty table.
+  const costSteps = steps.filter((step) => step.costUsd > 0);
+  const tableSteps = costSteps.length > 0 ? costSteps : steps;
 
   return (
     <InstrumentPanel className="p-5 md:p-6">
@@ -55,7 +64,7 @@ export default function CostPanel({ run, events }: CostPanelProps) {
           <div className="mt-4 max-h-40 overflow-auto">
             <table className="w-full max-w-xl font-mono text-sm">
               <tbody>
-                {steps.map((step) => (
+                {tableSteps.map((step) => (
                   <tr key={step.seq} className="border-t border-border first:border-t-0">
                     <td className="py-1.5 pr-3 text-steel">{step.seq}</td>
                     <td className={`py-1.5 pr-3 ${EVENT_TEXT[EVENT_CATEGORY[step.type]]}`}>
