@@ -5,6 +5,15 @@
   "description": "Hono + Zod API that validates and stores agent run events in SQLite",
   "type": "module",
   "main": "./dist/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ratmol/REPLAY.git",
+    "directory": "collector"
+  },
+  "homepage": "https://github.com/ratmol/REPLAY#readme",
+  "bugs": {
+    "url": "https://github.com/ratmol/REPLAY/issues"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

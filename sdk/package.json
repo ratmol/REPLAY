@@ -6,7 +6,22 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "files": ["dist"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ratmol/REPLAY.git",
+    "directory": "sdk"
+  },
+  "homepage": "https://github.com/ratmol/REPLAY#readme",
+  "bugs": {
+    "url": "https://github.com/ratmol/REPLAY/issues"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
