@@ -5,6 +5,19 @@
 
 import type { EventRecord, RunSummary } from "replay-shared";
 
+// Carries the HTTP status alongside the message so a caller can distinguish
+// "not found" from every other failure (network error, 500, bad collector
+// URL) without parsing the message string it happens to be built from.
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 // No .env mechanism yet: every other package in this repo defaults to
 // localhost:4747 (the collector's own default port), so the dashboard does
 // too. VITE_COLLECTOR_URL exists for a future deployed environment without
@@ -18,7 +31,7 @@ export async function fetchRuns(): Promise<RunSummary[]> {
   // 200 is the collector's hard max and a comfortable ceiling for a demo.
   const response = await fetch(`${API_BASE}/runs?limit=200`);
   if (!response.ok) {
-    throw new Error(`GET /runs failed: ${response.status}`);
+    throw new ApiError(`GET /runs failed: ${response.status}`, response.status);
   }
   const body = (await response.json()) as { runs: RunSummary[] };
   return body.runs;
@@ -27,7 +40,7 @@ export async function fetchRuns(): Promise<RunSummary[]> {
 export async function fetchRun(runId: string): Promise<RunSummary> {
   const response = await fetch(`${API_BASE}/runs/${encodeURIComponent(runId)}`);
   if (!response.ok) {
-    throw new Error(`GET /runs/${runId} failed: ${response.status}`);
+    throw new ApiError(`GET /runs/${runId} failed: ${response.status}`, response.status);
   }
   return (await response.json()) as RunSummary;
 }
@@ -45,7 +58,7 @@ export interface EventsPage {
 export async function fetchEvents(runId: string): Promise<EventsPage> {
   const response = await fetch(`${API_BASE}/runs/${encodeURIComponent(runId)}/events`);
   if (!response.ok) {
-    throw new Error(`GET /runs/${runId}/events failed: ${response.status}`);
+    throw new ApiError(`GET /runs/${runId}/events failed: ${response.status}`, response.status);
   }
   const body = (await response.json()) as { events: EventRecord[]; hasMore: boolean };
   return { events: body.events, hasMore: body.hasMore };

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { EventRecord, RunSummary } from "replay-shared";
-import { fetchEvents, fetchRun } from "../api";
+import { ApiError, fetchEvents, fetchRun } from "../api";
 import { Link, useSearchParam } from "../router";
 import Timeline from "../components/Timeline";
 import EventInspector from "../components/EventInspector";
@@ -31,8 +31,17 @@ interface RunDetailPageProps {
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "error"; message: string }
+  | { kind: "error"; message: string; notFound?: boolean }
   | { kind: "loaded"; run: RunSummary; events: EventRecord[]; hasMore: boolean };
+
+// A garbage or stale run id previously surfaced the raw request string
+// straight from api.ts ("GET /runs/xyz failed: 404") - accurate, but not
+// something a visitor should have to read. Every other failure (network
+// error, a 500, a misconfigured collector URL) still shows its real
+// message, since those aren't "this run doesn't exist" and shouldn't be
+// dressed up as if they were.
+const NOT_FOUND_MESSAGE =
+  "No run with this id. It may have been recorded to a different collector.";
 
 export default function RunDetailPage({ runId }: RunDetailPageProps) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
@@ -104,6 +113,10 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
       })
       .catch((error: unknown) => {
         if (!cancelled) {
+          if (error instanceof ApiError && error.status === 404) {
+            setState({ kind: "error", message: NOT_FOUND_MESSAGE, notFound: true });
+            return;
+          }
           const message = error instanceof Error ? error.message : "Failed to load run";
           setState({ kind: "error", message });
         }
@@ -145,6 +158,13 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
       {state.kind === "error" && (
         <div className="mt-4">
           <StateMessage kind="error" message={state.message} />
+          {state.notFound && (
+            <p className="mt-3 font-mono text-sm">
+              <Link to="/#runs" className="text-brass hover:text-signal">
+                &larr; All runs
+              </Link>
+            </p>
+          )}
         </div>
       )}
 
