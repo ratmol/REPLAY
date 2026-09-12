@@ -4,12 +4,16 @@
 // POST /runs, POST /runs/:id/events (chunked to the collector's 500-event cap),
 // flush on interval and on end(), one retry per request then give up silently.
 //
-// Zero runtime dependencies (invariant 2): the only import from replay-shared
-// is `import type`, erased at compile time. Network calls use the global
+// Zero runtime dependencies (invariant 2): every import here is either local
+// or a Node/web standard. `EventType` is declared locally (./event-type.ts)
+// rather than type-imported from the shared schema package, because even an
+// erased `import type` leaves a reference in this file's emitted declaration
+// output that a published package must not point at an unpublished one - see
+// event-type.ts for the full reasoning. Network calls use the global
 // `fetch`/`AbortController`/`crypto` - all standard in Node >= 18, no library
 // needed.
 
-import type { EventType } from "replay-shared";
+import type { EventType } from "./event-type.js";
 import { RingBuffer } from "./ring-buffer.js";
 import { truncatePayload } from "./payload.js";
 import { chunkArray, patchJsonWithRetry, postJsonWithRetry } from "./transport.js";
@@ -19,9 +23,9 @@ export const REPLAY_SDK_VERSION = "0.2.0";
 const DEFAULT_MAX_BUFFER_SIZE = 1000;
 const DEFAULT_FLUSH_INTERVAL_MS = 2000;
 // Mirrors the collector's own cap (collector/src/index.ts MAX_BATCH_SIZE,
-// docs/EVENT_SCHEMA.md section 6). Can't import it as a value: the SDK may
-// only `import type` from replay-shared, so a shared runtime constant isn't
-// an option without adding a real dependency.
+// docs/EVENT_SCHEMA.md section 6). Can't import it as a value: the SDK keeps
+// zero runtime dependencies, so a shared runtime constant isn't an option
+// without adding a real dependency on the package that defines it.
 const MAX_EVENTS_PER_BATCH = 500;
 
 function normalizePositiveInt(value: number | undefined, fallback: number): number {
@@ -61,8 +65,8 @@ export interface EndRunOptions {
 
 /**
  * The buffered, wire-shaped form of an event. Deliberately not the full
- * `Event` discriminated union from replay-shared: that union ties each
- * `type` literal to a specific payload shape at the type level, which fights
+ * `Event` discriminated union from the shared schema package: that union ties
+ * each `type` literal to a specific payload shape at the type level, which fights
  * a generic `push(type, payload)` builder for no runtime benefit - the
  * collector validates payloads loosely regardless (docs/EVENT_SCHEMA.md
  * principle 4). This shape is exactly what gets JSON.stringify'd and sent.

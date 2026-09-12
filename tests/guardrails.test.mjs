@@ -117,6 +117,37 @@ test("built sdk output does not reference replay-shared", (t) => {
   );
 });
 
+// Invariant: the SDK's local EventType union must never drift from the
+// shared schema package's EVENT_TYPES array.
+//
+// sdk/src/event-type.ts declares its own copy of the nine-literal union so
+// the SDK's published .d.ts never points at the unpublished shared package
+// (see that file's comment for why). A hand-maintained copy can only be
+// trusted if something notices the moment it goes stale - this reads both
+// literal lists out of source text and compares them as sets.
+test("sdk's local EventType stays in sync with shared's EVENT_TYPES", () => {
+  const sharedText = readFileSync(join(ROOT, "shared/src/index.ts"), "utf8");
+  const sdkText = readFileSync(join(ROOT, "sdk/src/event-type.ts"), "utf8");
+
+  const sharedMatch = sharedText.match(/EVENT_TYPES\s*=\s*\[([\s\S]*?)\]\s*as const/);
+  const sdkMatch = sdkText.match(/export type EventType\s*=([\s\S]*?);/);
+
+  assert.ok(sharedMatch, "could not find EVENT_TYPES array in shared/src/index.ts");
+  assert.ok(sdkMatch, "could not find the EventType union in sdk/src/event-type.ts");
+
+  const extractLiterals = (block) => [...block.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort();
+
+  const sharedLiterals = extractLiterals(sharedMatch[1]);
+  const sdkLiterals = extractLiterals(sdkMatch[1]);
+
+  assert.ok(sharedLiterals.length > 0, "parsed zero literals out of shared's EVENT_TYPES");
+  assert.deepEqual(
+    sdkLiterals,
+    sharedLiterals,
+    `sdk/src/event-type.ts has drifted from shared's EVENT_TYPES. shared: [${sharedLiterals.join(", ")}] sdk: [${sdkLiterals.join(", ")}]`,
+  );
+});
+
 // Invariant: events are append-only.
 //
 // Run-level totals are derived by summing events, so the runs table is legitimately
