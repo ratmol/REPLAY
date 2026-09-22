@@ -42,6 +42,7 @@ Every event, regardless of type, has this envelope:
 | `tokensIn` | int >= 0 | no | |
 | `tokensOut` | int >= 0 | no | |
 | `costUsd` | number >= 0 | no | Reported by caller, never computed by collector |
+| `trust` | `source` \| `sink` | no | Trust-boundary role. See §8 |
 
 Unknown envelope fields are **rejected** (`.strict()`). Unknown *payload* fields
 are **kept**. That asymmetry is the point of principle 4.
@@ -123,13 +124,19 @@ Full-fidelity storage with blob offloading is v2.
 | `tokens_in` | INTEGER | |
 | `tokens_out` | INTEGER | |
 | `cost_usd` | REAL | |
+| `trust` | TEXT | `source` \| `sink`, NULL for the vast majority. See §8 |
 
 **Indexes and constraints:**
 
 ```sql
 CREATE UNIQUE INDEX idx_events_run_seq ON events(run_id, seq);
 CREATE INDEX idx_runs_started_at ON runs(started_at DESC);
+CREATE INDEX idx_events_run_trust ON events(run_id, trust) WHERE trust IS NOT NULL;
 ```
+
+`idx_events_run_trust` is partial because `trust` is NULL on almost every row -
+a full index would be mostly dead weight over a column that is meaningful on a
+handful of events per run.
 
 The unique index on `(run_id, seq)` is load-bearing: it makes batch retries
 idempotent. The insert path uses `INSERT OR IGNORE`, so a re-sent batch after a
@@ -178,3 +185,80 @@ so the SDK can log it in debug mode.
    dashboard. Explicitly depends on the dashboard existing (Phase 2). Nothing in
    the 0.2 schema work forecloses this - a gap is just a hole in the `seq`
    sequence, detectable later from stored events without any schema change.
+
+---
+
+## 8. Trust boundaries
+
+An agent that reads untrusted content and then takes a consequential action has
+crossed a trust boundary. Replay records where that happened. It does not
+prevent it, score it, or claim to detect prompt injection.
+
+### The two roles
+
+`trust` marks an event as one end of a boundary:
+
+- **`source`** - untrusted content entered the run here. Typically a
+  `tool_result` from a fetch, search, file read, or retrieval tool.
+- **`sink`** - a consequential action fired here. Typically a `tool_call` to
+  send, write, execute, delete, or spend.
+
+Everything else leaves `trust` unset, which is the overwhelming majority of
+events.
+
+### What a trust path is
+
+A `source` at `seq` S and a `sink` at `seq` K in the same run where **K > S**.
+That is the entire rule. It is an ordered scan over one run's events, not a
+graph walk, because the event log is flat - "spans" exist only as a dashboard
+pairing at render time (§3), never as stored structure.
+
+### What it proves, and what it does not
+
+A path proves **untrusted content was in context when a consequential action
+fired**. It does *not* prove the untrusted content caused the action. Proving
+causation would require information-flow analysis through the model's own
+reasoning, which is an unsolved problem, and any tool claiming otherwise is
+overselling. The dashboard says "trust boundary crossed", never "injection
+detected".
+
+Known v1 limits, stated rather than hidden:
+
+- **No context-reset awareness.** If the agent clears its context between S and
+  K, the path is reported anyway. There is no event type that marks a context
+  reset, and adding one is a design conversation (principle 2), not a patch.
+- **Classification is by convention, not proof.** A tool is a source because it
+  was declared one, not because its output was analysed.
+
+### Why an envelope field, not a payload key
+
+Payload keys would have cost no schema change, which was tempting. But payloads
+over 50 KB are replaced wholesale by the truncation stub (§4), and a large
+payload is exactly what a fetched web page looks like. A security marker that
+disappears precisely on the inputs it exists to catch is worse than no marker,
+so `trust` lives in the envelope where truncation cannot reach it.
+
+### Why not a tenth event type
+
+The event set is closed (principle 2), and a `tainted_read` type would fragment
+pairing: a `tool_result` is still a `tool_result` whether or not it carried
+untrusted content. Trust is an attribute of an event, not a kind of event.
+
+### Who assigns it
+
+The SDK, before truncation, from the tool name. The collector validates the
+value and stores it, but never infers it - after truncation the collector may
+not even be able to see `toolName`, so inference there would silently fail on
+the largest and most interesting payloads.
+
+### Version skew: upgrade the collector first
+
+The envelope is `.strict()`, so a collector predating this field rejects any
+event carrying `trust` with a `400` - and the SDK's silent-failure mode means
+the host agent sees no error at all, just nothing recorded. An SDK newer than
+its collector therefore loses the whole run quietly, which is the worst
+available failure mode.
+
+**Deploy order is collector first, then SDK.** This is a one-way door only
+until every deployed collector has migration `0002`; older SDKs that never send
+`trust` work against a new collector fine, because the field is optional.

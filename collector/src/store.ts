@@ -9,7 +9,7 @@
 // batch directly, which would double-count on a retry (architecture
 // invariant 3 in CLAUDE.md).
 
-import type { CreateRunRequest, Event, PatchRunRequest } from "replay-shared";
+import type { CreateRunRequest, Event, PatchRunRequest, TrustRole } from "replay-shared";
 import { db } from "./db.js";
 
 export interface RunRow {
@@ -84,9 +84,9 @@ export function updateRunStatus(runId: string, patch: PatchRunRequest): boolean 
 
 const insertEventStmt = db.prepare(`
   INSERT OR IGNORE INTO events
-    (run_id, seq, timestamp, type, duration_ms, payload, tokens_in, tokens_out, cost_usd)
+    (run_id, seq, timestamp, type, duration_ms, payload, tokens_in, tokens_out, cost_usd, trust)
   VALUES
-    (@runId, @seq, @timestamp, @type, @durationMs, @payload, @tokensIn, @tokensOut, @costUsd)
+    (@runId, @seq, @timestamp, @type, @durationMs, @payload, @tokensIn, @tokensOut, @costUsd, @trust)
 `);
 
 // total_cost_usd is ROUNDed to 8 decimals because summing floats
@@ -122,6 +122,7 @@ const appendEventsTxn = db.transaction(
         tokensIn: event.tokensIn ?? null,
         tokensOut: event.tokensOut ?? null,
         costUsd: event.costUsd ?? null,
+        trust: event.trust ?? null,
       });
       if (result.changes > 0) {
         accepted += 1;
@@ -156,6 +157,7 @@ export interface EventRow {
   tokens_in: number | null;
   tokens_out: number | null;
   cost_usd: number | null;
+  trust: TrustRole | null;
 }
 
 // idx_runs_started_at (migrations.ts) makes this ORDER BY + LIMIT/OFFSET an

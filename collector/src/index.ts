@@ -114,6 +114,7 @@ function serializeEvent(row: EventRow): EventRecord {
     tokensIn: row.tokens_in ?? undefined,
     tokensOut: row.tokens_out ?? undefined,
     costUsd: row.cost_usd ?? undefined,
+    trust: row.trust ?? undefined,
   };
 }
 

@@ -68,6 +68,38 @@ test("requires the payload key even when the type carries no fields", () => {
   assert.equal(result.success, false);
 });
 
+test("accepts both trust roles on an event", () => {
+  for (const trust of ["source", "sink"] as const) {
+    const result = ToolResultEventSchema.safeParse({
+      seq: 4,
+      type: "tool_result",
+      timestamp: "2026-07-31T12:00:04Z",
+      payload: { toolName: "web_fetch", ok: true },
+      trust,
+    });
+    assert.equal(result.success, true, `expected trust ${trust} to parse`);
+    if (result.success) {
+      assert.equal(result.data.trust, trust);
+    }
+  }
+});
+
+test("treats trust as optional, since almost no event carries one", () => {
+  const result = RunStartEventSchema.safeParse(baseRunStart);
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.trust, undefined);
+  }
+});
+
+// The whole point of a closed enum here: a typo like "sources" must fail at the
+// collector edge rather than land in the column and read as an unclassified
+// event forever after.
+test("rejects a trust role outside source/sink", () => {
+  const result = RunStartEventSchema.safeParse({ ...baseRunStart, trust: "sources" });
+  assert.equal(result.success, false);
+});
+
 test("accepts a truncated payload marker on any event type", () => {
   const truncated = {
     _truncated: true,

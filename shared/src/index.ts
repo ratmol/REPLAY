@@ -28,6 +28,17 @@ export const EVENT_TYPES = [
 
 export type EventType = (typeof EVENT_TYPES)[number];
 
+/**
+ * Trust-boundary roles (docs/EVENT_SCHEMA.md section 8). `source` = untrusted
+ * content entered here, `sink` = a consequential action fired here. Deliberately
+ * an envelope attribute rather than two new event types: a `tool_result` is
+ * still a `tool_result` whether or not it carried untrusted content, and the
+ * event set is closed at nine.
+ */
+export const TRUST_ROLES = ["source", "sink"] as const;
+
+export type TrustRole = (typeof TRUST_ROLES)[number];
+
 // Fields shared by every event (docs/EVENT_SCHEMA.md section 2). `type` and
 // `payload` are declared per-variant below because their shapes differ; every
 // other envelope field is identical across all nine event types.
@@ -38,6 +49,10 @@ const envelopeShape = {
   tokensIn: z.number().int().nonnegative().optional(),
   tokensOut: z.number().int().nonnegative().optional(),
   costUsd: z.number().nonnegative().optional(),
+  // Lives here rather than in the payload because the payload is replaced
+  // wholesale when it exceeds 50KB, and a fetched web page - the canonical
+  // untrusted source - is exactly what blows that cap.
+  trust: z.enum(TRUST_ROLES).optional(),
 };
 
 // The marker the SDK substitutes for a payload whose serialized JSON exceeds
@@ -293,4 +308,5 @@ export interface EventRecord {
   tokensIn?: number;
   tokensOut?: number;
   costUsd?: number;
+  trust?: TrustRole;
 }

@@ -42,4 +42,16 @@ export const migrations: Migration[] = [
       CREATE INDEX idx_runs_started_at ON runs(started_at DESC);
     `,
   },
+  {
+    // Trust-boundary role (docs/EVENT_SCHEMA.md section 8). Nullable with no
+    // default and no backfill: runs recorded before this migration genuinely
+    // have no classification, and inventing one retroactively would be a
+    // fabricated security claim about data nobody classified.
+    id: "0002_event_trust",
+    sql: `
+      ALTER TABLE events ADD COLUMN trust TEXT;
+
+      CREATE INDEX idx_events_run_trust ON events(run_id, trust) WHERE trust IS NOT NULL;
+    `,
+  },
 ];
