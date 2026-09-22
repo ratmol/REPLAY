@@ -148,6 +148,33 @@ test("sdk's local EventType stays in sync with shared's EVENT_TYPES", () => {
   );
 });
 
+// Same hand-maintained-copy problem as EventType above, with a worse failure
+// mode: the collector's envelope is .strict(), so an SDK emitting a role the
+// shared enum doesn't know gets the whole batch rejected with a 400 - and the
+// SDK swallows errors, so the run vanishes with no message anywhere.
+test("sdk's local TrustRole stays in sync with shared's TRUST_ROLES", () => {
+  const sharedText = readFileSync(join(ROOT, "shared/src/index.ts"), "utf8");
+  const sdkText = readFileSync(join(ROOT, "sdk/src/trust.ts"), "utf8");
+
+  const sharedMatch = sharedText.match(/TRUST_ROLES\s*=\s*\[([\s\S]*?)\]\s*as const/);
+  const sdkMatch = sdkText.match(/export type TrustRole\s*=([\s\S]*?);/);
+
+  assert.ok(sharedMatch, "could not find TRUST_ROLES array in shared/src/index.ts");
+  assert.ok(sdkMatch, "could not find the TrustRole union in sdk/src/trust.ts");
+
+  const extractLiterals = (block) => [...block.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort();
+
+  const sharedLiterals = extractLiterals(sharedMatch[1]);
+  const sdkLiterals = extractLiterals(sdkMatch[1]);
+
+  assert.ok(sharedLiterals.length > 0, "parsed zero literals out of shared's TRUST_ROLES");
+  assert.deepEqual(
+    sdkLiterals,
+    sharedLiterals,
+    `sdk/src/trust.ts has drifted from shared's TRUST_ROLES. shared: [${sharedLiterals.join(", ")}] sdk: [${sdkLiterals.join(", ")}]`,
+  );
+});
+
 // Invariant: events are append-only.
 //
 // Run-level totals are derived by summing events, so the runs table is legitimately

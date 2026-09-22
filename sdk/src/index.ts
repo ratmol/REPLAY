@@ -14,9 +14,13 @@
 // needed.
 
 import type { EventType } from "./event-type.js";
+import type { TrustRole } from "./trust.js";
+import { classifyTrust } from "./trust.js";
 import { RingBuffer } from "./ring-buffer.js";
 import { truncatePayload } from "./payload.js";
 import { chunkArray, patchJsonWithRetry, postJsonWithRetry } from "./transport.js";
+
+export type { TrustRole } from "./trust.js";
 
 export const REPLAY_SDK_VERSION = "0.2.0";
 
@@ -56,6 +60,12 @@ export interface LogEventOptions {
   tokensIn?: number;
   tokensOut?: number;
   costUsd?: number;
+  /**
+   * Trust-boundary role. Omit to let the SDK infer one from `payload.toolName`;
+   * pass a role to force it, or `null` to suppress inference for a tool whose
+   * name reads consequential but is not (a `send_to_log` is not a sink).
+   */
+  trust?: TrustRole | null;
 }
 
 export interface EndRunOptions {
@@ -80,6 +90,7 @@ export interface BufferedEvent {
   tokensIn?: number;
   tokensOut?: number;
   costUsd?: number;
+  trust?: TrustRole;
 }
 
 interface RunConfig {
@@ -183,6 +194,7 @@ export class Run {
         tokensIn: options.tokensIn,
         tokensOut: options.tokensOut,
         costUsd: options.costUsd,
+        trust: options.trust,
       });
     } catch (error) {
       this.safeOnError(error);
@@ -231,8 +243,22 @@ export class Run {
   private push(
     type: EventType,
     payload: Record<string, unknown>,
-    extra?: { durationMs?: number; tokensIn?: number; tokensOut?: number; costUsd?: number },
+    extra?: {
+      durationMs?: number;
+      tokensIn?: number;
+      tokensOut?: number;
+      costUsd?: number;
+      trust?: TrustRole | null;
+    },
   ): void {
+    // Classified against the caller's payload, before truncatePayload can
+    // replace it with a preview stub - a payload big enough to truncate has
+    // already lost `toolName`, and a fetched web page is both the canonical
+    // untrusted source and the canonical thing that blows the 50KB cap.
+    // Explicit null means the caller has opted this event out of inference.
+    const trust =
+      extra?.trust === null ? undefined : (extra?.trust ?? classifyTrust(type, payload));
+
     const event: BufferedEvent = {
       seq: this.seq,
       type,
@@ -242,6 +268,7 @@ export class Run {
       ...(extra?.tokensIn !== undefined ? { tokensIn: extra.tokensIn } : {}),
       ...(extra?.tokensOut !== undefined ? { tokensOut: extra.tokensOut } : {}),
       ...(extra?.costUsd !== undefined ? { costUsd: extra.costUsd } : {}),
+      ...(trust !== undefined ? { trust } : {}),
     };
     this.seq += 1;
     this.buffer.push(event);

@@ -302,3 +302,52 @@ test("an invalid maxBufferSize or flushIntervalMs never crashes startRun", async
     await run?.end({ status: "completed" });
   }
 });
+
+test("infers a trust role from the tool name and sends it on the envelope", async (t) => {
+  const calls = mockFetch(t, () => ({ ok: true }));
+  const replay = new Replay({ endpoint: ENDPOINT, flushIntervalMs: 50_000 });
+  const run = replay.startRun({ name: "job-scraper" });
+  run.logEvent({ type: "tool_result", payload: { toolName: "web_fetch", ok: true } });
+  run.logEvent({ type: "tool_call", payload: { toolName: "send_email" } });
+  await run.end({ status: "completed" });
+
+  const sent = calls
+    .filter((c) => c.url.endsWith("/events"))
+    .flatMap((c) => (c.body as { events: { type: string; trust?: string }[] }).events);
+  assert.equal(sent.find((e) => e.type === "tool_result")?.trust, "source");
+  assert.equal(sent.find((e) => e.type === "tool_call")?.trust, "sink");
+  assert.equal(sent.find((e) => e.type === "run_start")?.trust, undefined);
+});
+
+test("an explicit trust role overrides inference, and null suppresses it", async (t) => {
+  mockFetch(t, () => ({ ok: true }));
+  const replay = new Replay({ endpoint: ENDPOINT, flushIntervalMs: 50_000 });
+  const run = replay.startRun({ name: "job-scraper" });
+  run.logEvent({ type: "tool_call", payload: { toolName: "summarize" }, trust: "sink" });
+  run.logEvent({ type: "tool_call", payload: { toolName: "send_to_log" }, trust: null });
+  const events = run.getBufferedEvents();
+  assert.equal(events.find((e) => e.payload["toolName"] === "summarize")?.trust, "sink");
+  assert.equal(events.find((e) => e.payload["toolName"] === "send_to_log")?.trust, undefined);
+  await run.end({ status: "completed" });
+});
+
+// The reason `trust` is an envelope field rather than a payload key. A fetched
+// web page is both the canonical untrusted source and the canonical payload
+// that blows the 50KB cap - if classification happened after truncation, or
+// lived inside the payload, the marker would vanish on exactly the events the
+// feature exists to catch.
+test("keeps the trust role on a payload large enough to be truncated", async (t) => {
+  mockFetch(t, () => ({ ok: true }));
+  const replay = new Replay({ endpoint: ENDPOINT, flushIntervalMs: 50_000 });
+  const run = replay.startRun({ name: "job-scraper" });
+  run.logEvent({
+    type: "tool_result",
+    payload: { toolName: "web_fetch", result: "x".repeat(60 * 1024) },
+  });
+
+  const event = run.getBufferedEvents().find((e) => e.type === "tool_result");
+  assert.equal(event?.payload["_truncated"], true);
+  assert.equal(event?.payload["toolName"], undefined, "truncation should have eaten toolName");
+  assert.equal(event?.trust, "source", "but the trust role must survive it");
+  await run.end({ status: "completed" });
+});
