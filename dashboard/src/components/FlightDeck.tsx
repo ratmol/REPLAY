@@ -22,6 +22,7 @@ import { eventIndexAtProgress, timecode } from "../lib/scrollTape";
 import { useScrollProgress } from "../hooks/useScrollProgress";
 import { Link } from "../router";
 import Readout from "./Readout";
+import StateMessage from "./StateMessage";
 import { EVENT_CATEGORY, EVENT_TEXT } from "../lib/eventColor";
 
 // The route is drawn at a fixed intrinsic width and slid horizontally behind a
@@ -36,6 +37,12 @@ interface FlightDeckProps {
   runName: string;
   agentName?: string;
   model?: string;
+}
+
+interface FlightState {
+  current: EventRecord;
+  currentPoint: ReturnType<typeof buildFlightPath>[number] | undefined;
+  durationMs: number;
 }
 
 export default function FlightDeck({ runId, runName, agentName, model }: FlightDeckProps) {
@@ -62,15 +69,30 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
   const sorted = useMemo(() => (events ? [...events].sort((a, b) => a.seq - b.seq) : []), [events]);
   const points = useMemo(() => buildFlightPath(sorted, ROUTE_WIDTH, ROUTE_HEIGHT), [sorted]);
 
-  if (sorted.length === 0) {
+  // events === null while fetchEvents is still in flight; events === [] once
+  // it resolves with nothing to show. Only the second one is a real dead end -
+  // conflating them used to make this whole component (headline included,
+  // since it lives in the same returned tree) render nothing for however long
+  // the collector took to answer, which on a cold-starting free-tier host is
+  // real seconds, not a flicker. The headline below doesn't actually need
+  // `sorted` - only the instrument strip and route do - so it's no longer
+  // gated on this at all.
+  const loading = events === null;
+  if (!loading && sorted.length === 0) {
     return null;
   }
 
-  const startMs = new Date(sorted[0]!.timestamp).getTime();
-  const endMs = new Date(sorted[sorted.length - 1]!.timestamp).getTime();
-  const durationMs = Math.max(endMs - startMs, 1);
-  const current = sorted[eventIndexAtProgress(sorted, progress)]!;
-  const currentPoint = points[eventIndexAtProgress(sorted, progress)];
+  let flightState: FlightState | undefined;
+  if (!loading) {
+    const startMs = new Date(sorted[0]!.timestamp).getTime();
+    const endMs = new Date(sorted[sorted.length - 1]!.timestamp).getTime();
+    const index = eventIndexAtProgress(sorted, progress);
+    flightState = {
+      durationMs: Math.max(endMs - startMs, 1),
+      current: sorted[index]!,
+      currentPoint: points[index],
+    };
+  }
 
   // The 260vh scroll-jacking wrapper only exists to give the pinned content
   // something to scrub against; with motion turned off there is nothing to
@@ -93,24 +115,46 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
       >
         <HeroCopy progress={progress} runId={runId} />
         <div>
-          <InstrumentStrip
-            runId={runId}
-            runName={runName}
-            agentName={agentName}
-            model={model}
-            current={current}
-            elapsedMs={progress * durationMs}
-            spentUsd={currentPoint?.cumulativeCostUsd ?? 0}
-          />
-          <Route points={points} progress={progress} />
-          <p className="mt-3 text-right font-mono text-micro uppercase text-steel">
-            {prefersReducedMotion
-              ? "Open the run to replay it"
-              : progress > 0.02
-                ? `${Math.round(progress * 100)} percent flown`
-                : "Scroll to fly it, or open a run below"}
-          </p>
+          {flightState ? (
+            <>
+              <InstrumentStrip
+                runId={runId}
+                runName={runName}
+                agentName={agentName}
+                model={model}
+                current={flightState.current}
+                elapsedMs={progress * flightState.durationMs}
+                spentUsd={flightState.currentPoint?.cumulativeCostUsd ?? 0}
+              />
+              <Route points={points} progress={progress} />
+              <p className="mt-3 text-right font-mono text-micro uppercase text-steel">
+                {prefersReducedMotion
+                  ? "Open the run to replay it"
+                  : progress > 0.02
+                    ? `${Math.round(progress * 100)} percent flown`
+                    : "Scroll to fly it, or open a run below"}
+              </p>
+            </>
+          ) : (
+            <FlightDeckSkeleton />
+          )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Occupies the space InstrumentStrip + Route take up once data lands, so the
+// pinned block never collapses to just the headline while fetchEvents is in
+// flight. Names the actual cause (the collector, not "loading" in the
+// abstract) since a slow response here usually means a free-tier host waking
+// up, not something broken.
+function FlightDeckSkeleton() {
+  return (
+    <div>
+      <div className="mb-3 h-[52px]" aria-hidden="true" />
+      <div className="flex h-[150px] items-center justify-center border-y border-steel-deep bg-surface bg-graticule bg-grid-32">
+        <StateMessage kind="loading" message="Waiting on a run to fly" />
       </div>
     </div>
   );
