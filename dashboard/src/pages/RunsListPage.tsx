@@ -3,6 +3,7 @@ import type { RunSummary } from "replay-shared";
 import { fetchRuns } from "../api";
 import RunRow, { RUN_ROW_DESKTOP_ONLY, RUN_ROW_GRID } from "../components/RunRow";
 import StateMessage from "../components/StateMessage";
+import InfoNote from "../components/InfoNote";
 import FlightDeck from "../components/FlightDeck";
 import SpecSection from "../components/SpecSection";
 import InstrumentPanel from "../components/InstrumentPanel";
@@ -132,6 +133,7 @@ export default function RunsListPage() {
                 totalCount={state.runs.length}
                 onChange={setQuery}
               />
+              <RunningRunsNote count={countByStatus(state.runs).running} />
               <div className="mt-5">
                 <InstrumentPanel>
                   <div
@@ -186,6 +188,31 @@ export default function RunsListPage() {
       </section>
 
       <SpecSection />
+    </div>
+  );
+}
+
+// Shown only when there is something to explain. Without it, a run that
+// crashed an hour ago sits under "running" next to a large time and reads as
+// an agent that has been working (and spending) for an hour.
+function RunningRunsNote({ count }: { count: number }) {
+  if (count === 0) {
+    return null;
+  }
+  return (
+    <div className="mt-5">
+      <InfoNote>
+        {count === 1 ? "1 run is" : `${count} runs are`} marked{" "}
+        <span className="text-status-running">running</span>. That only means the agent has not
+        called <code className="text-ink">end()</code> yet: it may still be working, or it may have
+        stopped without calling it (a crash, Ctrl+C).{" "}
+        {/* The Duration column is hidden below md (RUN_ROW_DESKTOP_ONLY), so
+            this sentence would point a phone user at nothing. */}
+        <span className="hidden md:inline">
+          For these runs the Duration column shows how long ago they started.{" "}
+        </span>
+        Open one to see when its last event arrived.
+      </InfoNote>
     </div>
   );
 }

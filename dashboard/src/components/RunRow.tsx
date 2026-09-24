@@ -1,6 +1,7 @@
 import type { RunSummary } from "replay-shared";
 import { Link } from "../router";
 import { runDurationMs } from "../lib/runFilter";
+import { formatAge } from "../lib/runAge";
 
 export const STATUS_COLOR: Record<RunSummary["status"], string> = {
   running: "text-status-running",
@@ -34,16 +35,6 @@ function formatDurationMs(ms: number): string {
 // detail page showed 0.9s of events - the number was right, the claim it
 // made was not. The status column already says RUNNING, so the cell does not
 // repeat it; the full sentence is in the cell's tooltip.
-function formatAge(ms: number): string {
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 1) {
-    return `${Math.floor(ms / 1000)}s ago`;
-  }
-  if (minutes < 60) {
-    return `${minutes}m ago`;
-  }
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m ago`;
-}
 
 function formatDuration(run: RunSummary): string {
   if (run.status === "running") {

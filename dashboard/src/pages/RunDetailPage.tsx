@@ -6,6 +6,8 @@ import Timeline from "../components/Timeline";
 import EventInspector from "../components/EventInspector";
 import CostPanel from "../components/CostPanel";
 import StateMessage from "../components/StateMessage";
+import InfoNote from "../components/InfoNote";
+import { formatAge, isLikelyStopped } from "../lib/runAge";
 import Readout, { type ReadoutTone } from "../components/Readout";
 
 // The status hues are already named on the Readout tone scale, so the run
@@ -196,6 +198,12 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
           </div>
 
           {state.run.status === "running" && (
+            <div className="mt-4">
+              <NoEndNote events={state.events} hasMore={state.hasMore} />
+            </div>
+          )}
+
+          {state.run.status === "running" && (
             <div className="mt-3 flex items-center gap-3">
               <button
                 type="button"
@@ -240,5 +248,44 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Explains a run with no recorded end, measured from its last event rather
+ * than its start: a run that started an hour ago and logged something a
+ * minute ago is almost certainly alive, while one silent for an hour almost
+ * certainly is not. Start time cannot tell those apart; the last event can.
+ *
+ * Only when every event is loaded. With `hasMore`, the last fetched event is
+ * just the end of the first page, and its age would claim the run went quiet
+ * long before it actually did.
+ */
+function NoEndNote({ events, hasMore }: { events: EventRecord[]; hasMore: boolean }) {
+  const last = events[events.length - 1];
+  if (!last || hasMore) {
+    return (
+      <InfoNote>
+        No end recorded for this run yet. The agent may still be working, or it may have stopped
+        without calling <code className="text-ink">end()</code>.
+      </InfoNote>
+    );
+  }
+  const lastMs = new Date(last.timestamp).getTime();
+  const now = Date.now();
+  return (
+    <InfoNote>
+      No end recorded. The last event arrived{" "}
+      <span className="text-ink">{formatAge(now - lastMs)}</span>.{" "}
+      {isLikelyStopped(lastMs, now) ? (
+        <>
+          After this long with nothing new, the agent most likely stopped without calling{" "}
+          <code className="text-ink">end()</code> - a crash or an interrupted process looks exactly
+          like this. Replay only records; if you are not sure, check the process itself.
+        </>
+      ) : (
+        <>It may still be working. Use Check for updates to fetch anything new.</>
+      )}
+    </InfoNote>
   );
 }
