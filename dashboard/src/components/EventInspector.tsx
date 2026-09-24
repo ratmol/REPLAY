@@ -3,6 +3,7 @@ import { isTruncatedPayload, type EventRecord } from "replay-shared";
 import { itemStartSeq, type TimelineItem } from "../lib/pairing";
 import InstrumentPanel from "./InstrumentPanel";
 import { EVENT_CATEGORY, EVENT_TEXT } from "../lib/eventColor";
+import { sourcesBefore, type TrustPaths } from "../lib/trust";
 
 /**
  * Copies text, reporting whether it worked. Clipboard access legitimately
@@ -21,10 +22,11 @@ async function copyText(text: string): Promise<boolean> {
 
 interface EventInspectorProps {
   item: TimelineItem | null;
+  trust: TrustPaths;
   onClose: () => void;
 }
 
-export default function EventInspector({ item, onClose }: EventInspectorProps) {
+export default function EventInspector({ item, trust, onClose }: EventInspectorProps) {
   if (item === null) {
     return (
       <InstrumentPanel className="p-4">
@@ -51,11 +53,11 @@ export default function EventInspector({ item, onClose }: EventInspectorProps) {
         </div>
       </div>
       {item.kind === "point" ? (
-        <EventCard key={item.event.seq} event={item.event} />
+        <EventCard key={item.event.seq} event={item.event} trust={trust} />
       ) : (
         <div className="flex flex-col gap-4">
-          <EventCard key={item.start.seq} event={item.start} />
-          <EventCard key={item.end.seq} event={item.end} />
+          <EventCard key={item.start.seq} event={item.start} trust={trust} />
+          <EventCard key={item.end.seq} event={item.end} trust={trust} />
         </div>
       )}
     </InstrumentPanel>
@@ -100,7 +102,7 @@ function ShareLinkButton({ seq }: { seq: number }) {
   );
 }
 
-function EventCard({ event }: { event: EventRecord }) {
+function EventCard({ event, trust }: { event: EventRecord; trust: TrustPaths }) {
   const [copied, setCopied] = useState(false);
   const truncated = isTruncatedPayload(event.payload) ? event.payload : null;
 
@@ -150,6 +152,7 @@ function EventCard({ event }: { event: EventRecord }) {
           </span>
         )}
       </div>
+      <TrustNote event={event} trust={trust} />
       <div className="relative">
         <pre className="max-h-64 overflow-auto rounded-sm bg-glass p-3 font-mono text-sm text-ink-muted shadow-glass">
           {JSON.stringify(event.payload, null, 2)}
@@ -163,5 +166,40 @@ function EventCard({ event }: { event: EventRecord }) {
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * What this event's trust role means, in words. The phrasing is fixed by
+ * docs/EVENT_SCHEMA.md section 8: a path proves untrusted content was in
+ * context, not that it caused the action, so this says "boundary crossed"
+ * and never "injection detected".
+ */
+function TrustNote({ event, trust }: { event: EventRecord; trust: TrustPaths }) {
+  if (event.trust === "source") {
+    return (
+      <p className="mb-2 font-mono text-sm text-brass">
+        Untrusted source - content from outside the run entered here.
+      </p>
+    );
+  }
+  if (event.trust !== "sink") {
+    return null;
+  }
+  const reach = trust.sinks.find((r) => r.sink.seq === event.seq);
+  const earlier = reach ? sourcesBefore(trust, reach) : [];
+  if (earlier.length === 0) {
+    return (
+      <p className="mb-2 font-mono text-sm text-steel">
+        Consequential action. No untrusted source came before it in this run.
+      </p>
+    );
+  }
+  return (
+    <p className="mb-2 font-mono text-sm leading-relaxed text-brass">
+      Trust boundary crossed. Untrusted content from seq{" "}
+      {earlier.map((source) => source.seq).join(", ")} was in context when this action fired.{" "}
+      <span className="text-steel">That it was present is recorded; that it caused this is not.</span>
+    </p>
   );
 }

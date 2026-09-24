@@ -6,7 +6,14 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import type { EventRecord } from "replay-shared";
-import { isSameTimelineItem, itemAtTime, pairEvents, type TimelineItem } from "../lib/pairing";
+import {
+  isSameTimelineItem,
+  itemAtTime,
+  itemBySeq,
+  pairEvents,
+  type TimelineItem,
+} from "../lib/pairing";
+import { hasCrossed, nearestSource, type TrustPaths } from "../lib/trust";
 import { SCRUBBER_SPEED_LEVELS, type Scrubber } from "../hooks/useScrubber";
 import StateMessage from "./StateMessage";
 import { useElementWidth } from "../hooks/useElementWidth";
@@ -26,6 +33,14 @@ const TRACK_PADDING_PX = 24;
 const TRACK_HEIGHT = 64;
 const TICK_SPACING_PX = 100;
 const SELECT_TOLERANCE_PX = 8;
+// The trust layer lives in the band between the tick tops and the span tops
+// (spans start at TRACK_HEIGHT / 2 - 8 = 24), so it never covers an event.
+const TRUST_MARK_Y = 18;
+// Quadratic control point for the source-to-sink arc. A control y of -6
+// puts the curve's apex at (18 + 18) / 4 + -6 / 2 = 6: inside the track,
+// clear of the marks. The apex is fixed rather than scaled by distance so a
+// long crossing does not climb out of the band.
+const TRUST_ARC_CONTROL_Y = -6;
 
 function formatElapsed(ms: number): string {
   const totalSeconds = ms / 1000;
@@ -64,6 +79,7 @@ interface TimelineMarksProps {
   startMs: number;
   pxPerMs: number;
   totalWidth: number;
+  trust: TrustPaths;
   onSelect: (item: TimelineItem) => void;
 }
 
@@ -84,6 +100,7 @@ const TimelineMarks = memo(function TimelineMarks({
   startMs,
   pxPerMs,
   totalWidth,
+  trust,
   onSelect,
 }: TimelineMarksProps) {
   const toX = (timestamp: string) => (new Date(timestamp).getTime() - startMs) * pxPerMs;
@@ -142,9 +159,91 @@ const TimelineMarks = memo(function TimelineMarks({
           </circle>
         );
       })}
+      <TrustLayer items={items} trust={trust} toX={toX} onSelect={onSelect} />
     </>
   );
 });
+
+interface TrustLayerProps {
+  items: TimelineItem[];
+  trust: TrustPaths;
+  toX: (timestamp: string) => number;
+  onSelect: (item: TimelineItem) => void;
+}
+
+// Source and sink markers, plus one arc per crossed sink back to its nearest
+// preceding source. Brass, because every other hue already means something:
+// signal is the playhead, crimson is a fault, amber and teal are event kinds.
+// The arc is dashed on purpose - it says "this was in context", not "this
+// flowed into that", which is all a path can honestly claim
+// (docs/EVENT_SCHEMA.md section 8).
+//
+// Deliberately exempt from category muting: muting everything else and
+// leaving the trust layer lit is the quickest way to see only the crossings.
+function TrustLayer({ items, trust, toX, onSelect }: TrustLayerProps) {
+  function select(seq: number) {
+    const item = itemBySeq(items, seq);
+    if (item) {
+      onSelect(item);
+    }
+  }
+
+  return (
+    <g>
+      {trust.sinks.map((reach) => {
+        const source = nearestSource(trust, reach);
+        if (!source) {
+          return null;
+        }
+        const x1 = toX(source.timestamp);
+        const x2 = toX(reach.sink.timestamp);
+        return (
+          <path
+            key={`arc-${reach.sink.seq}`}
+            d={`M ${x1} ${TRUST_MARK_Y} Q ${(x1 + x2) / 2} ${TRUST_ARC_CONTROL_Y} ${x2} ${TRUST_MARK_Y}`}
+            className="pointer-events-none fill-none stroke-brass"
+            strokeWidth={1.5}
+            strokeDasharray="3 3"
+          />
+        );
+      })}
+      {trust.sources.map((source) => (
+        <circle
+          key={`source-${source.seq}`}
+          cx={toX(source.timestamp)}
+          cy={TRUST_MARK_Y}
+          r={3.5}
+          className="cursor-pointer fill-surface stroke-brass"
+          strokeWidth={1.5}
+          onPointerDown={() => select(source.seq)}
+        >
+          <title>{`untrusted source - seq ${source.seq}`}</title>
+        </circle>
+      ))}
+      {trust.sinks.map((reach) => {
+        const x = toX(reach.sink.timestamp);
+        const crossed = hasCrossed(reach);
+        return (
+          <polygon
+            key={`sink-${reach.sink.seq}`}
+            points={`${x},${TRUST_MARK_Y - 4.5} ${x + 4.5},${TRUST_MARK_Y} ${x},${TRUST_MARK_Y + 4.5} ${x - 4.5},${TRUST_MARK_Y}`}
+            // A sink with no source before it is still marked, in steel
+            // rather than brass: the action is consequential, but no boundary
+            // was crossed, and colouring it the same would cry wolf.
+            className={`cursor-pointer ${crossed ? "fill-brass" : "fill-steel-dim"}`}
+            onPointerDown={() => select(reach.sink.seq)}
+          >
+            <title>
+              {crossed
+                ? `consequential action - seq ${reach.sink.seq}. Trust boundary crossed: ${reach.sourcesBefore} untrusted source${reach.sourcesBefore === 1 ? "" : "s"} earlier in the run`
+                : `consequential action - seq ${reach.sink.seq}. No untrusted source before it`}
+            </title>
+          </polygon>
+        );
+      })}
+    </g>
+  );
+}
 
 // The one thing that DOES move every frame, kept to two small shapes so
 // re-rendering it 60x/s during playback is cheap. Memoized anyway (on the
@@ -163,10 +262,13 @@ interface TimelineProps {
   events: EventRecord[];
   scrubber: Scrubber;
   selected: TimelineItem | null;
+  // Must be reference-stable across playback frames (memoized by the
+  // caller), or TimelineMarks stops bailing out of re-renders.
+  trust: TrustPaths;
   onSelect: (item: TimelineItem) => void;
 }
 
-export default function Timeline({ events, scrubber, selected, onSelect }: TimelineProps) {
+export default function Timeline({ events, scrubber, selected, trust, onSelect }: TimelineProps) {
   const [zoomIndex, setZoomIndex] = useState(DEFAULT_ZOOM_INDEX);
   // Muted rather than removed: hiding events would change the shape of the
   // run - gaps would close up and the remaining marks would sit at times they
@@ -183,6 +285,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
   // items.map reconciliation below) reran on every one of those frames
   // instead of only when the underlying events actually change.
   const items = useMemo(() => pairEvents(events), [events]);
+  const crossings = trust.sinks.filter(hasCrossed).length;
 
   // Hooks can't follow the early return further down, so everything they
   // depend on is computed defensively above it instead (an empty run just
@@ -347,6 +450,7 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
             startMs={startMs}
             pxPerMs={pxPerMs}
             totalWidth={totalWidth}
+            trust={trust}
             onSelect={onSelect}
           />
           <Playhead x={playheadX} />
@@ -376,11 +480,41 @@ export default function Timeline({ events, scrubber, selected, onSelect }: Timel
             </button>
           );
         })}
+        {(trust.sources.length > 0 || trust.sinks.length > 0) && (
+          <TrustLegend crossings={crossings} />
+        )}
       </div>
       <p className="mt-2 font-mono text-sm leading-relaxed text-steel">
         Click or drag to seek, or click an event to inspect it. With the track focused: ←/→ steps
         between events, Enter inspects the one under the playhead, space plays.
       </p>
     </div>
+  );
+}
+
+// Not a toggle like the category entries beside it - the trust layer is never
+// muted (see TrustLayer) - so it is plain text, not a button pretending to be
+// one. Only rendered for runs that have a trust marker at all.
+function TrustLegend({ crossings }: { crossings: number }) {
+  return (
+    <span className="flex items-center gap-3 border-l border-steel-deep pl-4 font-mono text-sm text-steel">
+      <span className="flex items-center gap-1.5">
+        <svg aria-hidden="true" width={10} height={10} className="block">
+          <circle cx={5} cy={5} r={3.5} className="fill-none stroke-brass" strokeWidth={1.5} />
+        </svg>
+        untrusted source
+      </span>
+      <span className="flex items-center gap-1.5">
+        <svg aria-hidden="true" width={10} height={10} className="block">
+          <polygon points="5,0.5 9.5,5 5,9.5 0.5,5" className="fill-brass" />
+        </svg>
+        consequential action
+      </span>
+      <span className={crossings > 0 ? "text-brass" : undefined}>
+        {crossings === 0
+          ? "no boundary crossed"
+          : `trust boundary crossed ${crossings}x`}
+      </span>
+    </span>
   );
 }

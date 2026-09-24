@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { EventRecord, RunSummary } from "replay-shared";
 import { ApiError, fetchEvents, fetchRun } from "../api";
 import { Link, useSearchParam } from "../router";
@@ -24,6 +24,7 @@ import {
   pairEvents,
   type TimelineItem,
 } from "../lib/pairing";
+import { trustPaths } from "../lib/trust";
 
 interface RunDetailPageProps {
   runId: string;
@@ -51,6 +52,10 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
   // resets the playhead once state.events actually changes.
   const events = state.kind === "loaded" ? state.events : [];
   const scrubber = useScrubber(events);
+  // Derived here, not inside Timeline, because the inspector needs the same
+  // answer ("which sources preceded this sink?") and two components deriving
+  // it separately is two chances to disagree.
+  const trust = useMemo(() => trustPaths(events), [events]);
   const [selected, setSelected] = useState<TimelineItem | null>(null);
   const [seqParam, setSeqParam] = useSearchParam("seq");
 
@@ -224,11 +229,12 @@ export default function RunDetailPage({ runId }: RunDetailPageProps) {
                 events={state.events}
                 scrubber={scrubber}
                 selected={selected}
+                trust={trust}
                 onSelect={handleSelect}
               />
             </div>
             <div className="mt-4 md:mt-0 md:w-80 md:shrink-0">
-              <EventInspector item={selected} onClose={handleClose} />
+              <EventInspector item={selected} trust={trust} onClose={handleClose} />
             </div>
           </div>
         </div>
