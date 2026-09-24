@@ -27,9 +27,27 @@ function formatDurationMs(ms: number): string {
 // looked broken rather than like the sort doing its job. Reusing
 // runDurationMs here means the number in the row is the same one the sort
 // is actually ranking by.
+//
+// Worded as an age ("1h 42m ago"), not a bare duration: "running" only
+// means end() was never called, which is also what a crashed agent looks
+// like. A bare "102m" read as 102 minutes of recorded work on a run whose
+// detail page showed 0.9s of events - the number was right, the claim it
+// made was not. The status column already says RUNNING, so the cell does not
+// repeat it; the full sentence is in the cell's tooltip.
+function formatAge(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) {
+    return `${Math.floor(ms / 1000)}s ago`;
+  }
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m ago`;
+}
+
 function formatDuration(run: RunSummary): string {
   if (run.status === "running") {
-    return `running · ${formatDurationMs(runDurationMs(run, Date.now()))}`;
+    return formatAge(runDurationMs(run, Date.now()));
   }
   if (!run.endedAt) {
     return "running";
@@ -116,7 +134,14 @@ export default function RunRow({ run, pinned, onTogglePin }: RunRowProps) {
           </span>
         )}
       </span>
-      <span className={`${RUN_ROW_DESKTOP_ONLY} text-right font-mono text-xs text-ink-muted`}>
+      <span
+        className={`${RUN_ROW_DESKTOP_ONLY} whitespace-nowrap text-right font-mono text-xs text-ink-muted`}
+        title={
+          run.status === "running"
+            ? "Started this long ago, with no end recorded yet. Not the length of the recorded events."
+            : undefined
+        }
+      >
         {formatDuration(run)}
       </span>
       <span className="text-right font-mono text-xs text-ink-muted">
