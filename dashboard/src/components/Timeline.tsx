@@ -19,6 +19,7 @@ import StateMessage from "./StateMessage";
 import { useElementWidth } from "../hooks/useElementWidth";
 import { EVENT_CATEGORY, EVENT_FILL, EVENT_LEGEND, type EventCategory } from "../lib/eventColor";
 import InstrumentPanel from "./InstrumentPanel";
+import { formatTick } from "../lib/ticks";
 
 // Zoom is a multiple of "the whole run fits the visible track", not an
 // absolute pixels-per-second. A fixed scale looked fine on the seeded demo
@@ -50,17 +51,6 @@ function formatElapsed(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = Math.round(totalSeconds % 60);
   return `${minutes}m ${seconds}s`;
-}
-
-// Tick labels need as many decimals as the gap between ticks actually
-// resolves. Reusing formatElapsed here printed "0.1s 0.1s 0.2s 0.2s" on a
-// half-second run - a ruler with two identical marks is worse than no ruler.
-function formatTick(ms: number, msPerTick: number): string {
-  if (ms >= 60_000) {
-    return formatElapsed(ms);
-  }
-  const decimals = msPerTick < 100 ? 2 : msPerTick < 1000 ? 1 : 0;
-  return `${(ms / 1000).toFixed(decimals)}s`;
 }
 
 function buildTicks(totalWidth: number): number[] {
