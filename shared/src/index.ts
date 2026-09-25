@@ -288,6 +288,13 @@ export interface RunSummary {
   totalTokensIn: number;
   totalTokensOut: number;
   totalCostUsd: number;
+  /**
+   * How many `sink` events have at least one `source` at a lower seq
+   * (docs/EVENT_SCHEMA.md section 8). Derived by the collector at read time,
+   * like the totals, because the runs list never loads events and so cannot
+   * work it out itself.
+   */
+  trustCrossings: number;
   metadata?: Record<string, unknown>;
 }
 

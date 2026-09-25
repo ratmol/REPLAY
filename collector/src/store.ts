@@ -162,10 +162,40 @@ export interface EventRow {
 
 // idx_runs_started_at (migrations.ts) makes this ORDER BY + LIMIT/OFFSET an
 // index scan rather than a full table sort.
-const listRunsStmt = db.prepare("SELECT * FROM runs ORDER BY started_at DESC LIMIT ? OFFSET ?");
+// A run as the read endpoints return it: the stored row plus values derived
+// from its events at read time.
+export interface RunSummaryRow extends RunRow {
+  trust_crossings: number;
+}
 
-export function listRuns(limit: number, offset: number): RunRow[] {
-  return listRunsStmt.all(limit, offset) as RunRow[];
+// Sinks that come after the run's first source. "Some source has a lower seq"
+// and "the first source has a lower seq" are the same condition, so one MIN()
+// replaces an EXISTS per sink. MIN over no rows is NULL, and `seq > NULL` is
+// never true, so a run without sources counts zero. Computed at read time
+// rather than stored on `runs`: it is a pure function of the log, and a stored
+// copy would need recomputing on every insert for a value only reads use.
+// Both subqueries hit idx_events_run_trust, which only indexes rows that
+// carry a trust role.
+const TRUST_CROSSINGS_SQL = `(
+  SELECT COUNT(*) FROM events k
+  WHERE k.run_id = runs.id AND k.trust = 'sink'
+    AND k.seq > (SELECT MIN(s.seq) FROM events s WHERE s.run_id = runs.id AND s.trust = 'source')
+) AS trust_crossings`;
+
+const listRunsStmt = db.prepare(
+  `SELECT runs.*, ${TRUST_CROSSINGS_SQL} FROM runs ORDER BY started_at DESC LIMIT ? OFFSET ?`,
+);
+
+export function listRuns(limit: number, offset: number): RunSummaryRow[] {
+  return listRunsStmt.all(limit, offset) as RunSummaryRow[];
+}
+
+// Separate from getRun, which the write routes call on every batch purely as
+// an existence check - they have no use for the derived count.
+const getRunSummaryStmt = db.prepare(`SELECT runs.*, ${TRUST_CROSSINGS_SQL} FROM runs WHERE id = ?`);
+
+export function getRunSummary(runId: string): RunSummaryRow | undefined {
+  return getRunSummaryStmt.get(runId) as RunSummaryRow | undefined;
 }
 
 // idx_events_run_seq covers (run_id, seq), so "seq > ? ORDER BY seq" is also

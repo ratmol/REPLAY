@@ -23,11 +23,12 @@ import {
   appendEvents,
   createRun,
   getRun,
+  getRunSummary,
   listEvents,
   listRuns,
   updateRunStatus,
   type EventRow,
-  type RunRow,
+  type RunSummaryRow,
 } from "./store.js";
 import { seedSampleRunsIfMissing } from "./seed.js";
 
@@ -65,7 +66,7 @@ const EventsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(1000).default(500),
 });
 
-function serializeRun(row: RunRow): RunSummary {
+function serializeRun(row: RunSummaryRow): RunSummary {
   return {
     id: row.id,
     name: row.name,
@@ -80,6 +81,7 @@ function serializeRun(row: RunRow): RunSummary {
     totalTokensIn: row.total_tokens_in,
     totalTokensOut: row.total_tokens_out,
     totalCostUsd: row.total_cost_usd,
+    trustCrossings: row.trust_crossings,
     metadata: parseStoredJson(row.metadata) as Record<string, unknown> | undefined,
   };
 }
@@ -211,7 +213,7 @@ app.get("/runs", (c) => {
 });
 
 app.get("/runs/:id", (c) => {
-  const run = getRun(c.req.param("id"));
+  const run = getRunSummary(c.req.param("id"));
   if (!run) {
     return c.json({ error: `unknown run: ${c.req.param("id")}` }, 404);
   }

@@ -158,3 +158,47 @@ test("M1: an over-limit body is rejected with 413", async () => {
   });
   assert.equal(res.status, 413);
 });
+
+// trustCrossings is derived at read time from the event log: a sink counts
+// only if some source has a lower seq. Same rule as the dashboard's
+// trustPaths(), checked here against the SQL that implements it for the list.
+test("trustCrossings counts sinks that follow a source, on both read routes", async () => {
+  const id = "77777777-7777-4777-8777-777777777777";
+  await post("/runs", runBody(id));
+  const e = (seq: number, type: string, trust?: string): Record<string, unknown> => ({
+    seq,
+    type,
+    timestamp: ISO,
+    payload: {},
+    ...(trust ? { trust } : {}),
+  });
+  const batch = await post(
+    `/runs/${id}/events`,
+    JSON.stringify({
+      events: [
+        e(0, "run_start"),
+        e(1, "tool_call", "sink"), // before any source: not a crossing
+        e(2, "tool_result", "source"),
+        e(3, "tool_call", "sink"),
+        e(4, "tool_result", "source"),
+        e(5, "tool_call", "sink"),
+      ],
+    }),
+  );
+  assert.equal(batch.status, 200);
+
+  const one = (await (await app.request(`/runs/${id}`)).json()) as { trustCrossings: number };
+  assert.equal(one.trustCrossings, 2);
+
+  const list = (await (await app.request("/runs?limit=100")).json()) as {
+    runs: Array<{ id: string; trustCrossings: number }>;
+  };
+  assert.equal(list.runs.find((r) => r.id === id)?.trustCrossings, 2);
+});
+
+test("trustCrossings is zero for a run with no trust markers", async () => {
+  const id = "88888888-8888-4888-8888-888888888888";
+  await post("/runs", runBody(id));
+  const one = (await (await app.request(`/runs/${id}`)).json()) as { trustCrossings: number };
+  assert.equal(one.trustCrossings, 0);
+});

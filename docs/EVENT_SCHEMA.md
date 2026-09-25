@@ -160,7 +160,7 @@ Run in WAL mode with `foreign_keys = ON`.
 | `POST` | `/runs/:id/events` | `{ events: Event[] }` (batch, max 500) | `{ accepted, skipped }` |
 | `PATCH` | `/runs/:id` | `{ status, endedAt }` | `{ ok: true }` |
 | `GET` | `/runs` | - | paginated run summaries, newest first |
-| `GET` | `/runs/:id` | - | run + derived totals |
+| `GET` | `/runs/:id` | - | run + derived totals and `trustCrossings` (§8) |
 | `GET` | `/runs/:id/events` | `?after=<seq>&limit=<n>` | events ordered by `seq`, plus `hasMore` (a row existed past this page) |
 
 **Error contract:** `400` with `{ error, issues }` for Zod failures (pass the
@@ -243,6 +243,14 @@ so `trust` lives in the envelope where truncation cannot reach it.
 The event set is closed (principle 2), and a `tainted_read` type would fragment
 pairing: a `tool_result` is still a `tool_result` whether or not it carried
 untrusted content. Trust is an attribute of an event, not a kind of event.
+
+### Counting crossings per run
+
+Run summaries carry `trustCrossings`: the number of sinks with a source at a
+lower seq. The collector derives it at read time, like the cost totals, because
+the runs list never loads events and so cannot apply the rule itself. It is
+computed as "sinks after the run's first source", which is the same condition -
+some source precedes a sink exactly when the first one does.
 
 ### Who assigns it
 
