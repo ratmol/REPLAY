@@ -23,9 +23,14 @@ waypoint is a real event - scrubbed by your own scroll position, not an
 autoplaying animation. It's hand-rolled SVG, no charting library, same rule as
 the timeline itself.
 
-A recorded walkthrough (GIF or video) of the scrubber has not been captured
-yet - that's a manual step left for later, not a placeholder for a broken
-link.
+![Replay walkthrough: the landing hero flying a recorded run, filtering the runs list to trust-boundary crossings, then playing a run and inspecting the action that fired after untrusted content](docs/demo.gif)
+
+Recorded from the live demo: scroll flies a run, the runs list is filtered to
+runs that crossed a trust boundary, and one is played back and its
+consequential action inspected. Try it at
+[replay-collector.vercel.app](https://replay-collector.vercel.app) - the demo
+collector runs on a free host that sleeps when idle, so the first load can take
+~30s.
 
 ## How it works
 
