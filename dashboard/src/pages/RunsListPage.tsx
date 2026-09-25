@@ -86,14 +86,10 @@ export default function RunsListPage() {
 
   return (
     <div>
-      {previewRun && (
-        <FlightDeck
-          runId={previewRun.id}
-          runName={previewRun.name}
-          agentName={previewRun.agentName}
-          model={previewRun.model}
-        />
-      )}
+      <FlightDeck
+        run={previewRun ?? null}
+        unavailable={state.kind === "error" || (state.kind === "loaded" && !previewRun)}
+      />
 
       <section id="runs" className="mt-24 scroll-mt-24 border-t border-border pt-10">
         <Reveal>

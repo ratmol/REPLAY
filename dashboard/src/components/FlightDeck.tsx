@@ -14,7 +14,7 @@
 // event log.
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { EventRecord } from "replay-shared";
+import type { EventRecord, RunSummary } from "replay-shared";
 import { fetchEvents } from "../api";
 import { EVENT_FILL } from "../lib/eventColor";
 import { altitudeAtX, buildFlightPath, groundY } from "../lib/flightPath";
@@ -33,23 +33,34 @@ const ROUTE_WIDTH = 2600;
 const ROUTE_HEIGHT = 150;
 
 interface FlightDeckProps {
-  runId: string;
-  runName: string;
-  agentName?: string;
-  model?: string;
+  /**
+   * The run to fly, or null while the runs list is still loading. Taken as a
+   * prop that can be null, rather than the parent only mounting this once it
+   * has a run, because that gate hid the whole intro - headline included -
+   * for as long as the collector took to answer: 20-50s on a free host
+   * waking from sleep, during which the runs section was the top of the page.
+   */
+  run: RunSummary | null;
+  /** The runs list finished with nothing to fly (empty, or the fetch failed). */
+  unavailable: boolean;
 }
 
 interface FlightState {
+  run: RunSummary;
   current: EventRecord;
   currentPoint: ReturnType<typeof buildFlightPath>[number] | undefined;
   durationMs: number;
 }
 
-export default function FlightDeck({ runId, runName, agentName, model }: FlightDeckProps) {
+export default function FlightDeck({ run, unavailable }: FlightDeckProps) {
   const [events, setEvents] = useState<EventRecord[] | null>(null);
   const { ref, progress, prefersReducedMotion } = useScrollProgress<HTMLDivElement>();
+  const runId = run?.id ?? null;
 
   useEffect(() => {
+    if (runId === null) {
+      return;
+    }
     let cancelled = false;
     fetchEvents(runId)
       .then(({ events: fetched }) => {
@@ -59,7 +70,11 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
       })
       .catch(() => {
         // The hero is decorative. If this fails the page still works - the
-        // runs list below has its own real error handling.
+        // runs list below has its own real error handling. Settles to "no
+        // events" so the flight area is dropped instead of waiting forever.
+        if (!cancelled) {
+          setEvents([]);
+        }
       });
     return () => {
       cancelled = true;
@@ -78,16 +93,26 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
   // `sorted` - only the instrument strip and route do - so it's no longer
   // gated on this at all.
   const loading = events === null;
-  if (!loading && sorted.length === 0) {
-    return null;
+  // Nothing to fly: no run to pick, or the picked run had no events. The
+  // intro still renders - it never needed the data - just without the flight
+  // and without the tall scroll track that only exists to scrub one.
+  const grounded = unavailable || (!loading && sorted.length === 0);
+
+  if (grounded) {
+    return (
+      <div className="relative -mt-20 pb-8 pt-24">
+        <HeroCopy progress={0} runId={null} />
+      </div>
+    );
   }
 
   let flightState: FlightState | undefined;
-  if (!loading) {
+  if (!loading && run) {
     const startMs = new Date(sorted[0]!.timestamp).getTime();
     const endMs = new Date(sorted[sorted.length - 1]!.timestamp).getTime();
     const index = eventIndexAtProgress(sorted, progress);
     flightState = {
+      run,
       durationMs: Math.max(endMs - startMs, 1),
       current: sorted[index]!,
       currentPoint: points[index],
@@ -118,10 +143,10 @@ export default function FlightDeck({ runId, runName, agentName, model }: FlightD
           {flightState ? (
             <>
               <InstrumentStrip
-                runId={runId}
-                runName={runName}
-                agentName={agentName}
-                model={model}
+                runId={flightState.run.id}
+                runName={flightState.run.name}
+                agentName={flightState.run.agentName}
+                model={flightState.run.model}
                 current={flightState.current}
                 elapsedMs={progress * flightState.durationMs}
                 spentUsd={flightState.currentPoint?.cumulativeCostUsd ?? 0}
@@ -154,13 +179,16 @@ function FlightDeckSkeleton() {
     <div>
       <div className="mb-3 h-[52px]" aria-hidden="true" />
       <div className="flex h-[150px] items-center justify-center border-y border-steel-deep bg-surface bg-graticule bg-grid-32">
-        <StateMessage kind="loading" message="Waiting on a run to fly" />
+        <StateMessage
+          kind="loading"
+          message="Waiting on a run to fly - the demo server sleeps when idle and can take ~30s to wake"
+        />
       </div>
     </div>
   );
 }
 
-function HeroCopy({ progress, runId }: { progress: number; runId: string }) {
+function HeroCopy({ progress, runId }: { progress: number; runId: string | null }) {
   // The headline hands off to the flight as you scroll - one continuous move
   // rather than two focal points competing. It fully clears out (opacity 0,
   // lifted away) instead of lingering half-faded, which read as "stuck": the
@@ -199,8 +227,10 @@ function HeroCopy({ progress, runId }: { progress: number; runId: string }) {
           the bottom of the frame. Source lives in the top nav, so it is not
           repeated here. */}
       <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-3">
+        {/* Before a run is known this points at the list instead, so the
+            button is usable from the first paint rather than appearing late. */}
         <Link
-          to={`/runs/${runId}`}
+          to={runId ? `/runs/${runId}` : "/#runs"}
           className="inline-flex items-center gap-2 border border-signal/70 px-4 py-2 font-mono text-sm text-signal transition-colors hover:bg-signal hover:text-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal"
         >
           Open a live run <span aria-hidden="true">&rarr;</span>
