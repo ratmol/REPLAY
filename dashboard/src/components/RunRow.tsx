@@ -76,7 +76,9 @@ export default function RunRow({ run, pinned, onTogglePin }: RunRowProps) {
       // together (status, pin button label, caret, name, model, duration,
       // cost, run by run) - this states the three things that actually
       // answer "which run do I want" in one readable sentence.
-      aria-label={`${run.name}, ${run.status}, ${formatCost(run.totalCostUsd)}`}
+      aria-label={`${run.name}, ${run.status}, ${formatCost(run.totalCostUsd)}${
+        run.trustCrossings > 0 ? ", crossed a trust boundary" : ""
+      }`}
       className={`${RUN_ROW_GRID} group py-4 transition-colors duration-150 hover:bg-surface-overlay`}
     >
       <span className={`font-mono text-xs uppercase tracking-wide ${STATUS_COLOR[run.status]}`}>
@@ -117,6 +119,18 @@ export default function RunRow({ run, pinned, onTogglePin }: RunRowProps) {
           &#9654;
         </span>
         <span className="truncate">{run.name}</span>
+        {run.trustCrossings > 0 && (
+          <svg
+            role="img"
+            aria-label="crossed a trust boundary"
+            width={9}
+            height={9}
+            className="block shrink-0"
+          >
+            <title>{`Trust boundary crossed ${run.trustCrossings}x: a consequential action fired after untrusted content entered the run`}</title>
+            <polygon points="4.5,0 9,4.5 4.5,9 0,4.5" className="fill-brass" />
+          </svg>
+        )}
       </span>
       <span className={RUN_ROW_DESKTOP_ONLY}>
         {run.model && (

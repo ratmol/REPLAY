@@ -26,6 +26,7 @@ const SORTS: ReadonlyArray<{ key: RunSortKey; label: string }> = [
 interface RunFilterBarProps {
   query: RunQuery;
   counts: Record<StatusFilter, number>;
+  trustCount: number;
   resultCount: number;
   totalCount: number;
   onChange: (query: RunQuery) => void;
@@ -34,6 +35,7 @@ interface RunFilterBarProps {
 export default function RunFilterBar({
   query,
   counts,
+  trustCount,
   resultCount,
   totalCount,
   onChange,
@@ -89,6 +91,25 @@ export default function RunFilterBar({
             </button>
           );
         })}
+        {/* A toggle beside the status chips rather than one of them: it
+            narrows whatever status is selected instead of replacing it. */}
+        <button
+          type="button"
+          aria-pressed={query.trustOnly}
+          disabled={trustCount === 0 && !query.trustOnly}
+          onClick={() => onChange({ ...query, trustOnly: !query.trustOnly })}
+          title="Runs where a consequential action fired after untrusted content entered the run"
+          className={`ml-2 flex items-center gap-2 rounded-sm border px-3 py-1.5 font-mono text-sm uppercase tracking-wide transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-35 ${
+            query.trustOnly
+              ? "border-signal bg-surface-overlay text-brass"
+              : "border-steel-deep text-steel hover:border-steel-dim hover:text-ink"
+          }`}
+        >
+          <svg aria-hidden="true" width={9} height={9} className="block">
+            <polygon points="4.5,0 9,4.5 4.5,9 0,4.5" className="fill-brass" />
+          </svg>
+          trust boundary <span className="text-steel-dim">{trustCount}</span>
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

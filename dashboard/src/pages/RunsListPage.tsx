@@ -12,6 +12,7 @@ import Reveal from "../components/Reveal";
 import { usePinnedRuns } from "../hooks/usePinnedRuns";
 import {
   countByStatus,
+  countTrustCrossed,
   EMPTY_RUN_QUERY,
   filterAndSortRuns,
   partitionPinned,
@@ -78,7 +79,8 @@ export default function RunsListPage() {
   // and not being narrowed by a filter - a filtered result is already a short,
   // deliberate set, and hiding part of it would fight the filter the visitor
   // just applied.
-  const collapsing = !expanded && query.status === "all" && query.text.trim() === "";
+  const collapsing =
+    !expanded && query.status === "all" && !query.trustOnly && query.text.trim() === "";
   const shownRuns = collapsing ? visibleRuns.slice(0, RUNS_PAGE_SIZE) : visibleRuns;
   const hiddenCount = visibleRuns.length - shownRuns.length;
 
@@ -115,6 +117,10 @@ export default function RunsListPage() {
               <dt className="inline text-ink-muted">Cost</dt>{" "}
               <dd className="inline">summed from the events, not estimated</dd>
             </div>
+            <div>
+              <dt className="inline text-ink-muted">&#9670;</dt>{" "}
+              <dd className="inline">acted after reading untrusted content</dd>
+            </div>
           </dl>
         </Reveal>
 
@@ -129,6 +135,7 @@ export default function RunsListPage() {
               <RunFilterBar
                 query={query}
                 counts={countByStatus(state.runs)}
+                trustCount={countTrustCrossed(state.runs)}
                 resultCount={visibleRuns.length}
                 totalCount={state.runs.length}
                 onChange={setQuery}

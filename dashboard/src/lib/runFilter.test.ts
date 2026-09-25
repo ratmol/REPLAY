@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { RunSummary } from "replay-shared";
 import {
   countByStatus,
+  countTrustCrossed,
   filterAndSortRuns,
   matchesText,
   partitionPinned,
@@ -20,6 +21,7 @@ function run(overrides: Partial<RunSummary> & { name: string }): RunSummary {
     totalTokensIn: 0,
     totalTokensOut: 0,
     totalCostUsd: 0,
+    trustCrossings: 0,
     ...overrides,
   };
 }
@@ -105,4 +107,22 @@ test("countByStatus totals each outcome plus an all bucket", () => {
     run({ name: "c", status: "running" }),
   ];
   assert.deepEqual(countByStatus(runs), { all: 3, running: 1, completed: 1, failed: 1 });
+});
+
+test("trustOnly keeps only runs that crossed a boundary, and composes with status", () => {
+  const runs = [
+    run({ name: "clean" }),
+    run({ name: "crossed", trustCrossings: 1 }),
+    run({ name: "crossed-failed", status: "failed", trustCrossings: 2 }),
+  ];
+  const trust = { ...EMPTY_RUN_QUERY, trustOnly: true };
+  assert.deepEqual(
+    filterAndSortRuns(runs, trust, NOW).map((r) => r.name).sort(),
+    ["crossed", "crossed-failed"],
+  );
+  assert.deepEqual(
+    filterAndSortRuns(runs, { ...trust, status: "failed" }, NOW).map((r) => r.name),
+    ["crossed-failed"],
+  );
+  assert.equal(countTrustCrossed(runs), 2);
 });

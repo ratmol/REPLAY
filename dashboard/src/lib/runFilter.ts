@@ -17,9 +17,20 @@ export interface RunQuery {
   status: StatusFilter;
   text: string;
   sort: RunSortKey;
+  /**
+   * Only runs that crossed a trust boundary. A separate flag rather than a
+   * fifth status: a run can be failed *and* have crossed a boundary, and the
+   * question worth asking is often exactly that combination.
+   */
+  trustOnly: boolean;
 }
 
-export const EMPTY_RUN_QUERY: RunQuery = { status: "all", text: "", sort: "recent" };
+export const EMPTY_RUN_QUERY: RunQuery = {
+  status: "all",
+  text: "",
+  sort: "recent",
+  trustOnly: false,
+};
 
 /**
  * Wall-clock length of a run in ms. A run still in flight has no end, and is
@@ -55,7 +66,9 @@ export function filterAndSortRuns(
 ): RunSummary[] {
   const matched = runs.filter(
     (run) =>
-      (query.status === "all" || run.status === query.status) && matchesText(run, query.text),
+      (query.status === "all" || run.status === query.status) &&
+      (!query.trustOnly || run.trustCrossings > 0) &&
+      matchesText(run, query.text),
   );
 
   // Sorting a copy, not in place: the caller's array is the fetched response
@@ -107,4 +120,9 @@ export function countByStatus(runs: RunSummary[]): Record<StatusFilter, number> 
     counts[run.status] += 1;
   }
   return counts;
+}
+
+/** How many runs crossed a trust boundary at least once, for the filter chip. */
+export function countTrustCrossed(runs: RunSummary[]): number {
+  return runs.filter((run) => run.trustCrossings > 0).length;
 }
